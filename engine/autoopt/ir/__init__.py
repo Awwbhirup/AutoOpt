@@ -1,8 +1,9 @@
-"""Three address code."""
+"""Three-address code: the representation every optimization operates on."""
 
 from __future__ import annotations
 
 from ..lang import compile_source
+from .cfg import BasicBlock, ControlFlowGraph, build_cfg
 from .lower import lower
 from .tac import (
     BinAssign,
@@ -25,9 +26,11 @@ from .tac import (
 )
 
 __all__ = [
+    "BasicBlock",
     "BinAssign",
     "BinOp",
     "Const",
+    "ControlFlowGraph",
     "Copy",
     "Goto",
     "IfFalse",
@@ -40,6 +43,7 @@ __all__ = [
     "UnAssign",
     "UnOp",
     "Var",
+    "build_cfg",
     "is_terminator",
     "jump_target",
     "lower",
