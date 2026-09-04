@@ -4,7 +4,7 @@ import pytest
 
 from autoopt.ir import source_to_tac
 from autoopt.orchestrator import RunConfig, optimize
-from autoopt.search import METHOD_NAMES, default_strategies
+from autoopt.search import METHOD_NAMES, build_strategy, default_strategies
 
 PLATEAU = "input n; int a = n; int b = a; int c = b; print(c);"
 CONST_CHAIN = "int k = 5; int x = k + 1; int y = x + 2; print(y);"
@@ -15,6 +15,8 @@ MIXED = (
 LOOPY = "input n; int c = 0; int i = 0; while (i < n) { c = (n+1)*(n+1); i = i + 1; } print(c);"
 
 ALL_CASES = [PLATEAU, CONST_CHAIN, MIXED, LOOPY]
+
+OFFLINE_METHODS = tuple(m for m in METHOD_NAMES if m != "llm")
 
 STEPWISE = ("fixed_pipeline", "greedy", "random_baseline")
 PLATEAU_CROSSING = ("astar", "hill_climbing", "simulated_annealing")
@@ -27,7 +29,7 @@ def run(source: str, method: str):  # type: ignore[no-untyped-def]
 # --- every method has to be correct first --------------------------------------
 
 
-@pytest.mark.parametrize("method", METHOD_NAMES)
+@pytest.mark.parametrize("method", OFFLINE_METHODS)
 @pytest.mark.parametrize("source", ALL_CASES)
 def test_every_method_preserves_behaviour(method: str, source: str) -> None:
     """Correctness is never traded for cost, whatever the method.
@@ -39,7 +41,7 @@ def test_every_method_preserves_behaviour(method: str, source: str) -> None:
     assert result.output_match
 
 
-@pytest.mark.parametrize("method", METHOD_NAMES)
+@pytest.mark.parametrize("method", OFFLINE_METHODS)
 @pytest.mark.parametrize("source", ALL_CASES)
 def test_no_method_makes_a_program_worse(method: str, source: str) -> None:
     result = run(source, method)
@@ -47,8 +49,10 @@ def test_no_method_makes_a_program_worse(method: str, source: str) -> None:
 
 
 @pytest.mark.parametrize("method", METHOD_NAMES)
-def test_every_method_is_registered(method: str) -> None:
-    assert method in default_strategies()
+def test_every_method_is_buildable(method: str) -> None:
+    # llm is built lazily rather than living in default_strategies, so that
+    # nothing constructs a provider chain unless that method is asked for.
+    assert build_strategy(method).name == method
 
 
 # --- the phase ordering result --------------------------------------------------
@@ -103,7 +107,7 @@ def test_astar_reports_states_seen() -> None:
 
 
 def test_already_optimal_program_is_untouched_by_every_method() -> None:
-    for method in METHOD_NAMES:
+    for method in OFFLINE_METHODS:
         result = run("input n; print(n);", method)
         assert result.accepted == 0
         assert result.cost_reduction == 0.0
@@ -112,7 +116,7 @@ def test_already_optimal_program_is_untouched_by_every_method() -> None:
 # --- reproducibility --------------------------------------------------------------
 
 
-@pytest.mark.parametrize("method", METHOD_NAMES)
+@pytest.mark.parametrize("method", OFFLINE_METHODS)
 def test_methods_are_reproducible(method: str) -> None:
     # The randomised methods are seeded, so a rerun has to match exactly or the
     # experiment cannot be regenerated.

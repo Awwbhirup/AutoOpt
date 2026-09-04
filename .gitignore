@@ -78,3 +78,6 @@ SUBJECT DATADUMP/
 
 # Internal planning notes, kept local
 PLAN/
+
+# Cached LLM responses. Regenerable, and can be large.
+engine/.llm_cache/

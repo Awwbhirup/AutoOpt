@@ -19,8 +19,11 @@ from ..ir.tac import TacProgram
 from .differential import (
     DEFAULT_RANDOM_CASES,
     EDGE_VALUES,
+    FAST,
+    THOROUGH,
     Counterexample,
     DifferentialReport,
+    Profile,
     compare,
     input_vectors,
 )
@@ -29,8 +32,11 @@ from .smt import SmtReport, SmtVerdict, check_equivalence
 __all__ = [
     "DEFAULT_RANDOM_CASES",
     "EDGE_VALUES",
+    "FAST",
+    "THOROUGH",
     "Counterexample",
     "DifferentialReport",
+    "Profile",
     "SmtReport",
     "SmtVerdict",
     "VerificationOutcome",
@@ -67,12 +73,13 @@ def verify(
     candidate: TacProgram,
     *,
     seed: int = 0,
-    random_cases: int = DEFAULT_RANDOM_CASES,
+    random_cases: int | None = None,
     use_smt: bool = True,
     smt_timeout_ms: int = 5000,
+    profile: Profile = THOROUGH,
 ) -> VerificationOutcome:
     """Run both channels and combine them into one verdict."""
-    report = compare(original, candidate, seed=seed, random_cases=random_cases)
+    report = compare(original, candidate, seed=seed, random_cases=random_cases, profile=profile)
 
     if report.refuted:
         assert report.counterexample is not None

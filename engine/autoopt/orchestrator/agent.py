@@ -36,8 +36,8 @@ from ..events import (
 from ..events import Cost as CostEvent
 from ..ir import TacProgram
 from ..rules import Opportunity
-from ..search import Environment, SearchStats, Strategy, default_strategies
-from ..verify import VerificationOutcome, verify
+from ..search import Environment, SearchStats, Strategy, build_strategy
+from ..verify import FAST, VerificationOutcome, verify
 
 DEFAULT_MAX_ITERATIONS = 200
 
@@ -52,7 +52,7 @@ class RunConfig:
     #: once, at the end, which is where a proof is worth quoting.
     use_smt: bool = False
     prove_final: bool = False
-    random_cases: int = 32
+    random_cases: int | None = None
     weights: CostWeights | None = None
 
 
@@ -105,7 +105,7 @@ class Orchestrator:
     ) -> None:
         self.config = config or RunConfig()
         self.sink = sink or NullSink()
-        self.strategy = strategy or default_strategies(self.config.seed)[self.config.method]
+        self.strategy = strategy or build_strategy(self.config.method, self.config.seed)
         self._seq = 0
 
     def _emit(self, event: Event) -> None:
@@ -143,6 +143,7 @@ class Orchestrator:
                 seed=config.seed,
                 random_cases=config.random_cases,
                 use_smt=config.use_smt,
+                profile=FAST,
             )
 
         def record(
@@ -248,13 +249,10 @@ class Orchestrator:
                 )
             )
 
-        final_check = verify(
-            program,
-            outcome.program,
-            seed=config.seed,
-            random_cases=config.random_cases,
-            use_smt=False,
-        )
+        # The reported comparison, and the one the PASS/FAIL verdict comes from.
+        # Full edge values, wider range and the full step limit, unlike the fast
+        # profile the search itself runs on.
+        final_check = verify(program, outcome.program, seed=config.seed, use_smt=False)
         proof: str | None = None
         if config.prove_final:
             proof = verify(program, outcome.program, seed=config.seed, use_smt=True).verdict.value

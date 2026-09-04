@@ -81,6 +81,7 @@ class Environment:
         self.stats = stats
         self.on_move = on_move
         self._cache: dict[str, list[Move]] = {}
+        self._verdicts: dict[tuple[str, str], VerificationOutcome] = {}
 
     def cost(self, program: TacProgram) -> float:
         return self.model.score(program).total
@@ -105,7 +106,13 @@ class Environment:
                 continue
 
             self.stats.proposals += 1
-            outcome = self.verify_fn(program, candidate)
+            # The same rewrite is reached by several paths, and re-verifying it
+            # is the most expensive thing in the search.
+            verdict_key = (key, candidate.canonical_hash())
+            outcome = self._verdicts.get(verdict_key)
+            if outcome is None:
+                outcome = self.verify_fn(program, candidate)
+                self._verdicts[verdict_key] = outcome
             candidate_cost = self.cost(candidate)
 
             if self.on_move is not None:

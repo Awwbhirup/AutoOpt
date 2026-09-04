@@ -14,7 +14,9 @@ import heapq
 import math
 import random
 
-from ..ir import TacProgram
+from ..ir import TacProgram, build_cfg
+from ..rules import analyse
+from ..transforms import apply
 from .base import Environment, SearchResult, Strategy
 
 
@@ -116,14 +118,37 @@ class AStar(Strategy):
     name = "astar"
     crosses_plateaus = True
 
-    def __init__(self, node_budget: int = 120) -> None:
+    def __init__(self, node_budget: int = 96) -> None:
         self.node_budget = node_budget
+        self._estimates: dict[str, float] = {}
 
     def _heuristic(self, program: TacProgram, env: Environment) -> float:
-        moves = env.successors(program)
-        if not moves:
-            return 0.0
-        return max(0.0, env.cost(program) - min(move.cost for move in moves))
+        """Optimistic estimate of the saving still available, one step out.
+
+        Applies each opportunity and costs the result, but deliberately does not
+        verify any of them. Applying is list manipulation and costing is one CFG
+        walk; verification is the expensive part, and asking for it here made
+        pushing a node cost a full expansion.
+
+        Nothing unsafe follows from skipping verification, because this value only
+        orders the frontier. A candidate still has to pass env.successors, which
+        does verify, before it can be moved to.
+        """
+        key = program.canonical_hash()
+        cached = self._estimates.get(key)
+        if cached is not None:
+            return cached
+
+        current = env.cost(program)
+        best = current
+        for opportunity in analyse(build_cfg(program)):
+            candidate = apply(program, opportunity)
+            if candidate is not None:
+                best = min(best, env.cost(candidate))
+
+        estimate = max(0.0, current - best)
+        self._estimates[key] = estimate
+        return estimate
 
     def search(self, start: TacProgram, env: Environment, *, max_iterations: int) -> SearchResult:
         start_cost = env.cost(start)

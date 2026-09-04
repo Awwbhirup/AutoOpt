@@ -31,6 +31,41 @@ DEFAULT_RANDOM_RANGE = 1000
 
 
 @dataclass(frozen=True, slots=True)
+class Profile:
+    """How hard to test. Two are used, for different jobs.
+
+    Loop bounds in these programs come from inputs, so a large input means a long
+    loop. Testing a candidate against an input of 2^31 costs a hundred thousand
+    interpreter steps and finds nothing that an input of 7 would not, because what
+    breaks an optimization is 0, 1, -1 and negatives rather than magnitude.
+
+    FAST is used inside the search, where a candidate is checked tens of times per
+    program. THOROUGH is used once, on the original against the final result,
+    which is the comparison actually reported.
+    """
+
+    edge_values: tuple[int, ...]
+    random_cases: int
+    value_range: int
+    step_limit: int
+
+
+FAST = Profile(
+    edge_values=(0, 1, -1, 2, -2, 3, -3, 5, 8, -8, 12),
+    random_cases=12,
+    value_range=40,
+    step_limit=4000,
+)
+
+THOROUGH = Profile(
+    edge_values=EDGE_VALUES,
+    random_cases=64,
+    value_range=DEFAULT_RANDOM_RANGE,
+    step_limit=DEFAULT_STEP_LIMIT,
+)
+
+
+@dataclass(frozen=True, slots=True)
 class Counterexample:
     """Inputs that make the two programs observably differ."""
 
@@ -63,8 +98,9 @@ def input_vectors(
     program: TacProgram,
     *,
     seed: int,
-    random_cases: int = DEFAULT_RANDOM_CASES,
-    value_range: int = DEFAULT_RANDOM_RANGE,
+    random_cases: int | None = None,
+    value_range: int | None = None,
+    profile: Profile = THOROUGH,
 ) -> list[dict[str, int]]:
     """Edge cases first, then seeded random ones.
 
@@ -75,25 +111,25 @@ def input_vectors(
     if not names:
         return [{}]
 
+    edges = profile.edge_values
+    cases = profile.random_cases if random_cases is None else random_cases
+    spread = profile.value_range if value_range is None else value_range
     vectors: list[dict[str, int]] = []
 
     # Every input set to the same edge value, which is what exposes identities
     # like x - x and x / x.
-    for value in EDGE_VALUES:
+    for value in edges:
         vectors.append(dict.fromkeys(names, value))
 
     # Each input taking a different edge value, so argument order matters.
-    for offset in range(min(len(EDGE_VALUES), 6)):
+    for offset in range(min(len(edges), 6)):
         vectors.append(
-            {
-                name: EDGE_VALUES[(offset + position) % len(EDGE_VALUES)]
-                for position, name in enumerate(names)
-            }
+            {name: edges[(offset + position) % len(edges)] for position, name in enumerate(names)}
         )
 
     rng = random.Random(seed)
-    for _ in range(random_cases):
-        vectors.append({name: rng.randint(-value_range, value_range) for name in names})
+    for _ in range(cases):
+        vectors.append({name: rng.randint(-spread, spread) for name in names})
 
     return vectors
 
@@ -103,8 +139,9 @@ def compare(
     candidate: TacProgram,
     *,
     seed: int = 0,
-    random_cases: int = DEFAULT_RANDOM_CASES,
+    random_cases: int | None = None,
     step_limit: int | None = None,
+    profile: Profile = THOROUGH,
 ) -> DifferentialReport:
     """Run both over the same inputs and report the first difference found.
 
@@ -113,8 +150,8 @@ def compare(
     been compared at all, and calling that a pass would let unverified programs
     through.
     """
-    vectors = input_vectors(original, seed=seed, random_cases=random_cases)
-    limit = DEFAULT_STEP_LIMIT if step_limit is None else step_limit
+    vectors = input_vectors(original, seed=seed, random_cases=random_cases, profile=profile)
+    limit = profile.step_limit if step_limit is None else step_limit
 
     inconclusive = 0
     for index, vector in enumerate(vectors):
