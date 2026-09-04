@@ -1,0 +1,80 @@
+# ---------------------------------------------------------------------------
+# SECRETS - never commit. The repo is public.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+api keys/
+*.key
+*.pem
+secrets/
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Node / Next.js  (added in the product-layer phase)
+# ---------------------------------------------------------------------------
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.vercel/
+
+# ---------------------------------------------------------------------------
+# Generated data - regenerate with `make corpus` / `make experiment`.
+# Sample fixtures under data/samples/ are tracked deliberately.
+# ---------------------------------------------------------------------------
+data/corpus/*
+!data/corpus/.gitkeep
+data/runs/*
+!data/runs/.gitkeep
+data/cache/
+*.parquet
+
+# LLM response cache - regenerable, and can be large
+.llm_cache/
+
+# Generated figures and reports
+reports/generated/
+figures/generated/
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Third-party design docs and references. Local study material only -
+# not ours to republish from a public repo.
+FRONTEND KNOWLEDGE AND INSPO DATADUMP/
+SUBJECT DATADUMP/
+
+# Internal planning notes, kept local
+PLAN/
