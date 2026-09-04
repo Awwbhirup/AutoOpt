@@ -326,6 +326,45 @@ def analyze(
         console.print(f"  group {index}: {', '.join(subset)}")
 
 
+@app.command()
+def mutants(
+    out: Annotated[Path, typer.Option(help="Where to write the study")] = Path(
+        "../data/verification/mutation_study.json"
+    ),
+    programs: Annotated[int, typer.Option(help="Programs to mutate")] = 120,
+    per_program: Annotated[int, typer.Option(help="Mutants per program")] = 4,
+    seed: int = 0,
+) -> None:
+    """Inject faults and measure what each verification channel catches.
+
+    The runs cannot measure this. Every transformation is correct, so nothing in
+    the grid was ever refuted, and a detection rate taken from the runs would be
+    zero faults over a hundred thousand proposals. Module 7 needs a denominator of
+    faults that exist, so they are made here.
+    """
+    from .verify import mutation
+
+    study = mutation.run_study(programs=programs, per_program=per_program, seed=seed)
+    mutation.write(study, out)
+
+    console.print(
+        f"{study.programs} programs, {study.mutants_generated} mutants, "
+        f"{study.mutants_equivalent} with no observable difference"
+    )
+    console.print(f"faults to detect: [bold]{study.faults}[/bold]")
+    for channel in (study.differential, study.smt):
+        console.print(
+            f"  {channel.name:22s} {channel.detected}/{channel.total} "
+            f"= {channel.detection_rate:.4f}"
+        )
+    console.print(f"  {'either channel':22s} {study.detection_either:.4f}")
+    if study.false_positives:
+        console.print(
+            f"[red]{study.false_positives} programs were refuted against themselves[/red]"
+        )
+    console.print(f"written to {out}")
+
+
 def main() -> int:
     app()
     return 0

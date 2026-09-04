@@ -18,6 +18,7 @@ from typing import Any
 
 import pandas as pd
 
+from ..verify import mutation
 from . import descriptive, distributions, randomvars, regression, reliability, testing
 from .data import Dataset, confounding_table, latin_square_sample
 
@@ -99,11 +100,40 @@ def _jsonable(values: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def run(dataset: Dataset, budget: int | None = None) -> Analysis:
+def default_mutation_study(dataset: Dataset) -> Path:
+    """Where `autoopt mutants` leaves its result, relative to the run data."""
+    return dataset.source.parent.parent / "verification" / "mutation_study.json"
+
+
+def _mutation_table(study: dict[str, Any]) -> pd.DataFrame:
+    """Detection per mutation operator, which says where each channel is weak."""
+    rows = []
+    for operator, counts in sorted(study["by_operator"].items()):
+        faults = counts["faults"]
+        rows.append(
+            {
+                "mutation": operator,
+                "faults": faults,
+                "differential": counts["differential"] / faults if faults else 0.0,
+                "smt": counts["smt"] / faults if faults else 0.0,
+                "either": counts["either"] / faults if faults else 0.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def run(
+    dataset: Dataset,
+    budget: int | None = None,
+    mutation_study: Path | None = None,
+) -> Analysis:
     """Every module, in syllabus order."""
     budget = dataset.budgets[0] if budget is None else budget
     frame = dataset.at_budget(budget)
     analysis = Analysis(dataset=dataset, budget=budget)
+    study = mutation.load(
+        default_mutation_study(dataset) if mutation_study is None else mutation_study
+    )
 
     analysis.sections.append(_module_1(frame))
     analysis.sections.append(_module_2(frame))
@@ -111,7 +141,7 @@ def run(dataset: Dataset, budget: int | None = None) -> Analysis:
     analysis.sections.append(_module_4(frame))
     analysis.sections.append(_module_5(frame))
     analysis.sections.append(_module_6(dataset, frame, budget))
-    analysis.sections.append(_module_7(frame))
+    analysis.sections.append(_module_7(frame, study))
     return analysis
 
 
@@ -356,11 +386,10 @@ def _module_6(dataset: Dataset, frame: pd.DataFrame, budget: int) -> Section:
     return section
 
 
-def _module_7(frame: pd.DataFrame) -> Section:
+def _module_7(frame: pd.DataFrame, study: dict[str, Any] | None) -> Section:
     section = Section("M7", "Reliability")
 
     series = reliability.series_system(frame)
-    parallel = reliability.channel_reliability(frame)
 
     section.values["series"] = {
         "R_verify": series.r_verify,
@@ -368,12 +397,24 @@ def _module_7(frame: pd.DataFrame) -> Section:
         "R_system": series.reliability,
         "description": series.describe(),
     }
-    section.values["parallel"] = {
-        "R_channel_differential": parallel.r_channel_a,
-        "R_channel_smt": parallel.r_channel_b,
-        "R_detect": parallel.reliability,
-        "description": parallel.describe(),
-    }
+    section.values["refutation_rate"] = reliability.refutation_rate(frame)
+
+    if study is None:
+        section.notes.append(
+            "Detection reliability is missing because the mutation study has not "
+            "been run. Run: autoopt mutants"
+        )
+    else:
+        parallel = reliability.channel_reliability(study)
+        section.values["parallel"] = {
+            "R_channel_differential": parallel.r_channel_a,
+            "R_channel_smt": parallel.r_channel_b,
+            "R_detect": parallel.reliability,
+            "improvement_over_best_single": parallel.improvement_over_best_single,
+            "faults_injected": study["faults"],
+            "description": parallel.describe(),
+        }
+        section.tables["mutation_by_operator"] = _mutation_table(study)
     section.values["system"] = reliability.system_reliability(frame)
     section.values["maintainability"] = reliability.maintainability(frame)
     section.tables["hazard"] = reliability.hazard_by_iteration(frame)

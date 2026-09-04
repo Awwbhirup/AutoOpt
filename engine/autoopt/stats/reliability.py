@@ -21,9 +21,14 @@ accepted change is availability.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 import pandas as pd
+
+
+class MissingMutationStudyError(RuntimeError):
+    """Raised when a reliability figure needs measured detection rates."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,18 +169,45 @@ def system_reliability(frame: pd.DataFrame) -> dict[str, object]:
     }
 
 
-def channel_reliability(frame: pd.DataFrame, smt_detection: float = 1.0) -> ParallelSystem:
+def channel_reliability(study: dict[str, object] | None) -> ParallelSystem:
     """Detection reliability of the two verification channels in parallel.
 
-    The differential figure is measured: it is the share of refutations the fast
-    channel produced. The SMT figure defaults to 1.0 because on this corpus every
-    fault differential testing found, the solver also found; that is stated as an
-    assumption rather than buried.
+    Both figures come from the mutation study, because the run data cannot supply
+    them. Every transformation in the catalogue is correct, so nothing in the grid
+    was ever refuted, and a rate computed from the runs would be zero refutations
+    over a hundred thousand proposals: a statement about how good the proposer is,
+    not about how good the checkers are.
+
+    Reliability here is conditional on a fault existing, so the denominator has to
+    be faults. The mutation study makes them, which is the only way to get one.
+    """
+    if study is None:
+        raise MissingMutationStudyError(
+            "Detection reliability needs the mutation study. Run: autoopt mutants"
+        )
+
+    differential = cast(dict[str, float], study["differential"])
+    smt = cast(dict[str, float], study["smt"])
+    return ParallelSystem(
+        r_channel_a=float(differential["rate"]),
+        r_channel_b=float(smt["rate"]),
+    )
+
+
+def refutation_rate(frame: pd.DataFrame) -> dict[str, float]:
+    """Share of proposals verification threw out.
+
+    Not a detection rate. This measures the proposer: how often the rule engine
+    suggested something the checkers would not accept. Zero here means the rules
+    are sound on this corpus, and says nothing either way about the checkers.
     """
     proposals = float(frame["proposals"].sum())
     refuted = float(frame["refuted"].sum())
-    r_diff = refuted / proposals if proposals else 0.0
-    return ParallelSystem(r_channel_a=max(r_diff, 1e-9), r_channel_b=smt_detection)
+    return {
+        "proposals": proposals,
+        "refuted": refuted,
+        "rate": refuted / proposals if proposals else 0.0,
+    }
 
 
 def reliability_block_diagram() -> str:

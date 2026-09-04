@@ -110,9 +110,13 @@ def fit_continuous(values: pd.Series, bins: int = 10) -> list[Fit]:
                 continue
 
             free = len([p for p in parameters if p != 0])
-            ks_stat, ks_p = sp.kstest(
-                shifted, name if name != "weibull" else "weibull_min", args=parameters
-            )
+            # The frozen distribution's cdf, not a name and args. Passing a name
+            # means the key has to match scipy's own spelling ("norm", not
+            # "normal"), and even the right name takes a fast path that rejects
+            # the args. Either way kstest raises and the except below swallows it,
+            # which is how three of the five families quietly vanished from this
+            # comparison.
+            ks_stat, ks_p = sp.kstest(shifted, family(*parameters).cdf)
             chi2, chi2_p, dof = _chi_square_gof(shifted, family, parameters, bins, free)
 
             results.append(

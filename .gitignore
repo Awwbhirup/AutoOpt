@@ -54,6 +54,9 @@ data/runs/*
 data/cache/
 *.parquet
 
+# data/verification/ is tracked. It is a few kilobytes, it takes nine minutes to
+# regenerate, and it is the evidence behind the zero false positive claim.
+
 # LLM response cache - regenerable, and can be large
 .llm_cache/
 

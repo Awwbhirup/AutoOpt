@@ -1,0 +1,53 @@
+{
+  "programs": 120,
+  "mutants_generated": 472,
+  "mutants_equivalent_under_oracle": 105,
+  "faults": 367,
+  "differential": {
+    "name": "differential testing",
+    "detected": 365,
+    "missed": 2,
+    "rate": 0.9945504087193461
+  },
+  "smt": {
+    "name": "Z3 equivalence",
+    "detected": 367,
+    "missed": 0,
+    "rate": 1.0
+  },
+  "detected_by_either": 367,
+  "detection_either_rate": 1.0,
+  "false_positives_on_unmutated": 0,
+  "by_operator": {
+    "dropped print": {
+      "faults": 16,
+      "differential": 16,
+      "smt": 16,
+      "either": 16
+    },
+    "operator substitution": {
+      "faults": 188,
+      "differential": 188,
+      "smt": 188,
+      "either": 188
+    },
+    "constant shift": {
+      "faults": 128,
+      "differential": 126,
+      "smt": 128,
+      "either": 128
+    },
+    "inverted branch": {
+      "faults": 19,
+      "differential": 19,
+      "smt": 19,
+      "either": 19
+    },
+    "operand order": {
+      "faults": 16,
+      "differential": 16,
+      "smt": 16,
+      "either": 16
+    }
+  }
+}

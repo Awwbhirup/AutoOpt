@@ -307,8 +307,16 @@ def rbd_two_way(
 
 
 def three_way(frame: pd.DataFrame, response: str = "cost_reduction") -> pd.DataFrame:
-    """Method x category x size stratum, with all interactions."""
-    return _anova(frame, f"{response} ~ C(method) * C(category) * C(size_stratum)")
+    """Method x category x size, with all interactions.
+
+    Blocks on relative size rather than absolute. Absolute size is almost
+    perfectly confounded with category in this corpus, so crossing the two leaves
+    most cells empty; the saturated model is then rank deficient and every effect
+    collapses to a sum of squares of zero with p = 1. Relative size ranks each
+    program against others in its own category, which is orthogonal to category
+    by construction and leaves every cell populated.
+    """
+    return _anova(frame, f"{response} ~ C(method) * C(category) * C(relative_size)")
 
 
 def latin_square(design: pd.DataFrame, response: str = "cost_reduction") -> pd.DataFrame:
