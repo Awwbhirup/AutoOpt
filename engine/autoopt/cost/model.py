@@ -41,6 +41,21 @@ TEMP_PATTERN = re.compile(r"^t\d+$")
 #: exact value matters less than that deeper loops dominate shallower ones.
 TRIP_COUNT = 10
 
+#: Relative latency per operation, used only by the execution estimate.
+#:
+#: The arithmetic term stays a raw count, as Project 3 defines it. Operator cost
+#: belongs here instead, in the term the spec leaves undefined, because a multiply
+#: really does take longer than an add. Without this, strength reduction can never
+#: be accepted: n * 2 and n + n have identical instruction, arithmetic and
+#: temporary counts, so the cost gate would reject a transformation the spec
+#: explicitly asks for.
+OP_LATENCY: dict[BinOp, int] = {
+    BinOp.MUL: 3,
+    BinOp.DIV: 5,
+    BinOp.MOD: 5,
+}
+DEFAULT_LATENCY = 1
+
 
 @dataclass(frozen=True, slots=True)
 class CostWeights:
@@ -103,7 +118,13 @@ def measure(program: TacProgram, cfg: ControlFlowGraph | None = None) -> RawCost
                 pass
 
         temporaries.update(name for name in instruction.defs if TEMP_PATTERN.match(name))
-        execution += float(TRIP_COUNT ** depths[index])
+
+        latency = (
+            OP_LATENCY.get(instruction.op, DEFAULT_LATENCY)
+            if isinstance(instruction, BinAssign)
+            else DEFAULT_LATENCY
+        )
+        execution += float(latency * TRIP_COUNT ** depths[index])
 
     return RawCost(
         instruction_count=len(program.instructions),
