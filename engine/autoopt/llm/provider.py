@@ -148,6 +148,10 @@ class ProviderChain:
             path.write_text(json.dumps({"text": text, "provider": provider.name}), encoding="utf-8")
             return Completion(text=text, provider=provider.name)
 
+        # Deliberately not cached. The stub is what answers when every real
+        # provider is unavailable, not an answer in its own right, and storing it
+        # would permanently record the program as having nothing to do even once
+        # quota comes back.
         stub = StubProvider()
         return Completion(text=stub.complete(prompt), provider=stub.name)
 
@@ -156,15 +160,29 @@ def build_chain(cache_dir: str | Path | None = None) -> ProviderChain:
     """Gemini, then Groq, then the stub, using whatever keys are in the environment."""
     providers: list[Provider] = []
 
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
-    if gemini_key:
-        providers.append(
-            GeminiProvider(gemini_key, os.environ.get("AUTOOPT_LLM_MODEL", "gemini-3.6-flash"))
-        )
+    # Order is set by AUTOOPT_LLM_PROVIDER. Gemini's free tier has a daily cap
+    # that a full corpus run exhausts, so whichever has quota should lead.
+    preferred = os.environ.get("AUTOOPT_LLM_PROVIDER", "gemini").strip().lower()
 
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
     groq_key = os.environ.get("GROQ_API_KEY", "")
-    if groq_key:
-        providers.append(GroqProvider(groq_key))
+
+    def gemini() -> None:
+        if gemini_key:
+            providers.append(
+                GeminiProvider(gemini_key, os.environ.get("AUTOOPT_LLM_MODEL", "gemini-3.6-flash"))
+            )
+
+    def groq() -> None:
+        if groq_key:
+            providers.append(GroqProvider(groq_key))
+
+    if preferred == "groq":
+        groq()
+        gemini()
+    else:
+        gemini()
+        groq()
 
     providers.append(StubProvider())
     return ProviderChain(providers, cache_dir or os.environ.get("AUTOOPT_LLM_CACHE_DIR"))
