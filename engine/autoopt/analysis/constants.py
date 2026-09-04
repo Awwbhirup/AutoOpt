@@ -70,7 +70,8 @@ class Constants:
     before: tuple[frozenset[Fact], ...]
 
     def value_of(self, index: int, name: str) -> int | None:
-        for known_name, value in self.before[index]:
+        # Sorted for reproducibility; see Available.holder_of.
+        for known_name, value in sorted(self.before[index]):
             if known_name == name:
                 return value
         return None

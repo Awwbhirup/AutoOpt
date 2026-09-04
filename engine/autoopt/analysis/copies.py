@@ -26,8 +26,11 @@ class Copies:
     before: tuple[frozenset[Fact], ...]
 
     def source_of(self, index: int, name: str) -> str | None:
-        """The variable `name` is a copy of here, if it is one."""
-        for destination, source in self.before[index]:
+        """The variable `name` is a copy of here, if it is one.
+
+        Sorted for reproducibility; see Available.holder_of.
+        """
+        for destination, source in sorted(self.before[index]):
             if destination == name:
                 return source
         return None

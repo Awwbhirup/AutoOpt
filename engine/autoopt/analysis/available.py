@@ -51,8 +51,14 @@ class Available:
     before: tuple[frozenset[Fact], ...]
 
     def holder_of(self, index: int, key: ExprKey) -> str | None:
-        """The variable already holding `key` at this point, if any."""
-        for available_key, holder in self.before[index]:
+        """The variable already holding `key` at this point, if any.
+
+        Sorted, not just "first found". Facts live in a frozenset, and Python
+        randomises string hashing per process, so iterating one unsorted would
+        pick a different holder on different runs. That would make the whole
+        pipeline non-reproducible, which the statistics layer cannot tolerate.
+        """
+        for available_key, holder in sorted(self.before[index]):
             if available_key == key:
                 return holder
         return None
