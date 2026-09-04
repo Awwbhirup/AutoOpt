@@ -30,8 +30,14 @@ from .theme import Theme
 
 
 def _ordered(frame: pd.DataFrame, column: str, order: Sequence[str]) -> list[str]:
+    """Levels present, in the given order, with unknown ones kept on the end.
+
+    Dropping a level the order does not mention would silently remove a whole
+    method from a plot, which looks like a design decision rather than a bug.
+    """
     present = set(frame[column].astype(str))
-    return [level for level in order if level in present]
+    known = [level for level in order if level in present]
+    return known + sorted(present - set(order))
 
 
 def method_boxplot(frame: pd.DataFrame, theme: Theme, response: str = "cost_reduction") -> Figure:

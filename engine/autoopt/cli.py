@@ -327,6 +327,92 @@ def analyze(
 
 
 @app.command()
+def merge(
+    sources: Annotated[list[Path], typer.Argument(help="Run CSVs to combine")],
+    out: Annotated[Path, typer.Option(help="Where to write the combined grid")] = Path(
+        "../data/runs/complete.csv"
+    ),
+    allow_partial: Annotated[
+        bool, typer.Option(help="Write even when a method covers fewer programs than the widest")
+    ] = False,
+) -> None:
+    """Combine run CSVs into one grid, refusing an uneven one by default.
+
+    The LLM pass is run into its own file so a run that dies partway cannot
+    corrupt the grid the figures are built from. Merging is where the two become
+    one dataset, and where the coverage check happens: a method present for 200
+    programs while the rest have 500 would sit in every plot looking like a real
+    comparison, so it is refused rather than drawn.
+    """
+    import csv as _csv
+
+    missing = [path for path in sources if not path.exists()]
+    if missing:
+        console.print(f"[red]no such file: {', '.join(str(p) for p in missing)}[/red]")
+        raise typer.Exit(1)
+
+    header: list[str] | None = None
+    rows: list[dict[str, str]] = []
+    for path in sources:
+        with path.open(encoding="utf-8", newline="") as handle:
+            reader = _csv.DictReader(handle)
+            if reader.fieldnames is None:
+                console.print(f"[red]{path} is empty[/red]")
+                raise typer.Exit(1)
+            if header is None:
+                header = list(reader.fieldnames)
+            elif list(reader.fieldnames) != header:
+                console.print(f"[red]{path} has different columns to {sources[0]}[/red]")
+                raise typer.Exit(1)
+            rows.extend(reader)
+
+    assert header is not None
+
+    # One row per (program, method, budget). A re-run of a cell replaces the
+    # earlier one rather than being counted twice, with later files winning.
+    deduped: dict[tuple[str, str, str], dict[str, str]] = {}
+    for row in rows:
+        deduped[(row["program_id"], row["method"], row.get("node_budget", "0"))] = row
+    combined = list(deduped.values())
+
+    coverage: dict[str, set[str]] = {}
+    for row in combined:
+        coverage.setdefault(row["method"], set()).add(row["program_id"])
+
+    widest = max((len(p) for p in coverage.values()), default=0)
+    table = Table("method", "programs", "coverage")
+    uneven = []
+    for method in sorted(coverage, key=lambda m: -len(coverage[m])):
+        count = len(coverage[method])
+        share = count / widest if widest else 0.0
+        table.add_row(method, str(count), f"{share:.1%}")
+        if count < widest:
+            uneven.append(method)
+    console.print(table)
+
+    if uneven and not allow_partial:
+        console.print(
+            f"[red]incomplete: {', '.join(uneven)} cover fewer programs than the "
+            f"widest method ({widest}).[/red]"
+        )
+        console.print("Finish the run, or pass --allow-partial to write it anyway.")
+        raise typer.Exit(1)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", encoding="utf-8", newline="") as handle:
+        writer = _csv.DictWriter(handle, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(combined)
+
+    dropped = len(rows) - len(combined)
+    console.print(
+        f"{len(combined)} rows from {len(sources)} files"
+        + (f", {dropped} duplicate cells replaced" if dropped else "")
+    )
+    console.print(f"written to {out}")
+
+
+@app.command()
 def mutants(
     out: Annotated[Path, typer.Option(help="Where to write the study")] = Path(
         "../data/verification/mutation_study.json"

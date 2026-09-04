@@ -33,7 +33,11 @@ CATEGORY_ORDER = [
     "mixed",
 ]
 
+#: Presentation order only, roughly ascending by mean cost reduction so a plot
+#: reads left to right. Every method the engine can run must appear here, or
+#: lookups against it drop it silently; tests/test_stats.py enforces that.
 METHOD_ORDER = [
+    "llm",
     "fixed_pipeline",
     "greedy",
     "random_baseline",
@@ -43,6 +47,18 @@ METHOD_ORDER = [
 ]
 
 SIZE_LABELS = ["small", "medium", "large", "xlarge"]
+
+
+def order_methods(values: pd.Series) -> list[str]:
+    """Methods present, in presentation order, losing none of them.
+
+    Anything not in METHOD_ORDER goes on the end in sorted order rather than
+    being dropped. Filtering against a hardcoded list is how a newly added method
+    disappears from every plot without an error being raised anywhere.
+    """
+    present = set(values.astype(str))
+    known = [method for method in METHOD_ORDER if method in present]
+    return known + sorted(present - set(METHOD_ORDER))
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +78,7 @@ class Dataset:
 
     @property
     def methods(self) -> list[str]:
-        return [m for m in METHOD_ORDER if m in set(self.frame["method"])]
+        return order_methods(self.frame["method"])
 
     def at_budget(self, budget: int) -> pd.DataFrame:
         return self.frame[self.frame["node_budget"] == budget]

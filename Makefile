@@ -1,4 +1,4 @@
-.PHONY: help install lint fmt type test corpus experiment budgeted mutants analyze figures report notebook reproduce clean
+.PHONY: help install lint fmt type test corpus experiment budgeted merge mutants analyze figures report notebook reproduce clean
 
 help:
 	@echo "install     install the engine with dev dependencies"
@@ -9,6 +9,7 @@ help:
 	@echo "corpus      generate the 500-program dataset"
 	@echo "experiment  run every method x category cell -> master CSV"
 	@echo "budgeted    the same grid at three search budgets, for the statistics"
+	@echo "merge       combine the run CSVs, refusing an uneven grid"
 	@echo "mutants     inject faults, measure what each verification channel catches"
 	@echo "analyze     statistics: ANOVA, regression, distribution fits, reliability"
 	@echo "figures     the six required plots + statistics plots"
@@ -44,6 +45,11 @@ experiment:
 # method stops being a usable factor.
 budgeted:
 	cd engine && python -m autoopt.cli experiment --out ../data/runs/budgeted.csv --budgets 6,10,16
+
+# The LLM pass runs into its own file, so a run that dies partway cannot corrupt
+# the grid the figures are built from. Merging is where coverage is checked.
+merge:
+	cd engine && python -m autoopt.cli merge ../data/runs/master.csv ../data/runs/llm.csv --out ../data/runs/complete.csv
 
 mutants:
 	cd engine && python -m autoopt.cli mutants --out ../data/verification/mutation_study.json
