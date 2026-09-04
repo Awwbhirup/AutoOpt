@@ -15,13 +15,14 @@ notebook and the report renderer read the same results.
 
 from __future__ import annotations
 
-from . import descriptive, distributions, randomvars, regression, reliability, testing
+from . import analysis, descriptive, distributions, randomvars, regression, reliability, testing
 from .data import CATEGORY_ORDER, METHOD_ORDER, Dataset, latin_square_sample, load
 
 __all__ = [
     "CATEGORY_ORDER",
     "METHOD_ORDER",
     "Dataset",
+    "analysis",
     "descriptive",
     "distributions",
     "latin_square_sample",

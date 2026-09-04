@@ -318,7 +318,7 @@ def latin_square(design: pd.DataFrame, response: str = "cost_reduction") -> pd.D
     compared having accounted for both, using far fewer runs than a full
     factorial would need.
     """
-    return _anova(design, f"{response} ~ C(method) + C(size_stratum) + C(category)")
+    return _anova(design, f"{response} ~ C(method) + C(relative_size) + C(category)")
 
 
 def tukey(

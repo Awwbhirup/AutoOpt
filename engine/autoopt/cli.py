@@ -275,6 +275,57 @@ def report(
     console.print(f"  {logs}  ({written} decision logs, method={logs_for})")
 
 
+@app.command()
+def analyze(
+    data: Annotated[Path, typer.Option(help="Master CSV")] = Path("../data/runs/budgeted.csv"),
+    out: Annotated[Path, typer.Option()] = Path("../reports/generated/statistics"),
+    budget: Annotated[int, typer.Option(help="Which node budget to analyse, 0 for the first")] = 0,
+) -> None:
+    """Run the full statistical analysis and write the tables."""
+    from .stats import analysis as stats_analysis
+    from .stats import load
+
+    if not data.exists():
+        console.print(f"[red]no such file: {data}[/red]")
+        raise typer.Exit(1)
+
+    dataset = load(data)
+    console.print(dataset.describe())
+
+    chosen = budget or dataset.budgets[0]
+    result = stats_analysis.run(dataset, chosen)
+    console.print(f"analysed at node budget {chosen}")
+
+    out.mkdir(parents=True, exist_ok=True)
+    tables = result.write_tables(out / "tables")
+    result.to_json(out / "results.json")
+
+    from .figures import render_statistical
+
+    hazard = result.section("M7").tables.get("hazard")
+    written = render_statistical(dataset.frame, hazard, out / "figures", ("dark", "light"))
+    console.print(f"{len(written)} statistical figures written")
+
+    for section in result.sections:
+        console.print(f"[bold]{section.module}[/bold]  {section.title}")
+        for name in section.tables:
+            console.print(f"    table  {name}")
+        for note in section.notes:
+            console.print(f"    [dim]{note}[/dim]")
+
+    console.print(f"{len(tables)} tables written to {out / 'tables'}")
+    console.print(f"scalar results in {out / 'results.json'}")
+
+    # The two numbers that decide whether the design worked.
+    module6 = result.section("M6")
+    subsets = module6.values.get("homogeneous_subsets", [])
+    console.print(
+        f"method groups Tukey could separate: [bold]{len(subsets)}[/bold] of {len(dataset.methods)}"
+    )
+    for index, subset in enumerate(subsets, 1):
+        console.print(f"  group {index}: {', '.join(subset)}")
+
+
 def main() -> int:
     app()
     return 0
