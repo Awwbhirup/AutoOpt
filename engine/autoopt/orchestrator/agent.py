@@ -1,11 +1,11 @@
 """Orchestrator: analyse, propose, verify, evaluate, accept or reject, repeat.
 
 The loop the spec is built around. It owns no analysis and no transformation of
-its own; it decides what to try next and whether to keep the result, and it
-records why at every step.
+its own; it wires the components together, delegates the choice of what to try
+next to a search strategy, and records why at every step.
 
 Acceptance is the conjunction the spec states: a change is kept only if
-verification did not refute it AND it lowers cost. Both halves are recorded
+verification did not refute it AND it lowers cost. The two halves are counted
 separately, which is what lets the reliability analysis treat acceptance as a
 series system rather than one opaque gate.
 
@@ -27,19 +27,18 @@ from ..events import (
     EventSink,
     NullSink,
     OpportunityFound,
+    OptimizationType,
     RejectReason,
     RunConverged,
     RunStarted,
     VerificationResult,
 )
 from ..events import Cost as CostEvent
-from ..ir import TacProgram, build_cfg
-from ..rules import Opportunity, analyse
-from ..transforms import apply
-from ..verify import verify
+from ..ir import TacProgram
+from ..rules import Opportunity
+from ..search import Environment, SearchStats, Strategy, default_strategies
+from ..verify import VerificationOutcome, verify
 
-#: Safety net on the loop itself. Convergence normally happens well inside this;
-#: the cap only stops a transformation that undoes another from cycling forever.
 DEFAULT_MAX_ITERATIONS = 200
 
 
@@ -48,7 +47,11 @@ class RunConfig:
     method: str = "greedy"
     seed: int = 0
     max_iterations: int = DEFAULT_MAX_ITERATIONS
-    use_smt: bool = True
+    #: SMT inside the search loop is slow and returns unknown_bounded on anything
+    #: with a loop. The batch leaves it off and proves original against final
+    #: once, at the end, which is where a proof is worth quoting.
+    use_smt: bool = False
+    prove_final: bool = False
     random_cases: int = 32
     weights: CostWeights | None = None
 
@@ -65,13 +68,15 @@ class RunResult:
     iterations: int
     proposals: int
     verified: int
+    refuted: int
+    cost_improving: int
     accepted: int
-    rejected_verification: int
-    rejected_cost: int
-    rejected_stale: int
+    stale: int
+    nodes_expanded: int
     cost_before: float
     cost_after: float
     output_match: bool
+    final_proof: str | None = None
     applied: list[str] = field(default_factory=list)
 
     @property
@@ -82,18 +87,25 @@ class RunResult:
 
     @property
     def verification_pass_rate(self) -> float:
+        """Share of proposals that survived verification, per the spec."""
         return self.verified / self.proposals if self.proposals else 0.0
 
     @property
     def acceptance_rate(self) -> float:
         """Share of verified proposals that also lowered cost, per the spec."""
-        return self.accepted / self.verified if self.verified else 0.0
+        return self.cost_improving / self.verified if self.verified else 0.0
 
 
 class Orchestrator:
-    def __init__(self, config: RunConfig | None = None, sink: EventSink | None = None) -> None:
+    def __init__(
+        self,
+        config: RunConfig | None = None,
+        sink: EventSink | None = None,
+        strategy: Strategy | None = None,
+    ) -> None:
         self.config = config or RunConfig()
         self.sink = sink or NullSink()
+        self.strategy = strategy or default_strategies(self.config.seed)[self.config.method]
         self._seq = 0
 
     def _emit(self, event: Event) -> None:
@@ -108,9 +120,8 @@ class Orchestrator:
     ) -> RunResult:
         config = self.config
         model = CostModel.for_program(program, config.weights)
-
-        current = program
-        current_cost = model.score(current)
+        stats = SearchStats()
+        improving_count = 0
 
         self._emit(
             RunStarted(
@@ -120,73 +131,145 @@ class Orchestrator:
                 program_id=program_id,
                 category=category,
                 method=config.method,
-                initial_tac=[str(i) for i in current],
-                initial_cost=_cost_event(current_cost),
+                initial_tac=[str(i) for i in program],
+                initial_cost=_cost_event(model.score(program)),
             )
         )
 
-        counters = {
-            "proposals": 0,
-            "verified": 0,
-            "accepted": 0,
-            "rejected_verification": 0,
-            "rejected_cost": 0,
-            "rejected_stale": 0,
-        }
-        applied: list[str] = []
-        iteration = 0
+        def check(before: TacProgram, after: TacProgram) -> VerificationOutcome:
+            return verify(
+                before,
+                after,
+                seed=config.seed,
+                random_cases=config.random_cases,
+                use_smt=config.use_smt,
+            )
 
-        while iteration < config.max_iterations:
-            opportunities = analyse(build_cfg(current))
-            if not opportunities:
-                break
+        def record(
+            opportunity: Opportunity,
+            candidate: TacProgram,
+            outcome: VerificationOutcome,
+            before_cost: float,
+            after_cost: float,
+        ) -> None:
+            nonlocal improving_count
+            step = stats.nodes_expanded
 
-            progressed = False
-            for opportunity in opportunities:
+            self._emit(
+                OpportunityFound(
+                    run_id=program_id,
+                    seq=self._next_seq(),
+                    iteration=step,
+                    optimization_type=opportunity.kind,
+                    site=opportunity.site,
+                    derived_from=list(opportunity.derived_from),
+                )
+            )
+            self._emit(
+                CandidateProposed(
+                    run_id=program_id,
+                    seq=self._next_seq(),
+                    iteration=step,
+                    optimization_type=opportunity.kind,
+                    site=opportunity.site,
+                    proposed_tac=[str(i) for i in candidate],
+                    source="rule_based",
+                    rationale=None,
+                )
+            )
+            self._emit(
+                VerificationResult(
+                    run_id=program_id,
+                    seq=self._next_seq(),
+                    iteration=step,
+                    method=outcome.method,
+                    verdict=outcome.verdict,
+                    duration_ms=0.0,
+                    inputs_tested=outcome.inputs_tested,
+                    counterexample=outcome.counterexample,
+                )
+            )
+
+            if outcome.refuted:
                 self._emit(
-                    OpportunityFound(
+                    Decision(
                         run_id=program_id,
                         seq=self._next_seq(),
-                        iteration=iteration,
+                        iteration=step,
+                        accepted=False,
                         optimization_type=opportunity.kind,
-                        site=opportunity.site,
-                        derived_from=list(opportunity.derived_from),
+                        reject_reason=RejectReason.VERIFICATION_FAILED,
+                    )
+                )
+                return
+
+            improved = after_cost < before_cost
+            if improved:
+                improving_count += 1
+
+            self._emit(
+                CostEvaluated(
+                    run_id=program_id,
+                    seq=self._next_seq(),
+                    iteration=step,
+                    cost_before=_cost_event(model.score(candidate), override=before_cost),
+                    cost_after=_cost_event(model.score(candidate), override=after_cost),
+                    improved=improved,
+                )
+            )
+
+            if not improved:
+                # Rejected by the step-by-step methods. The search methods may
+                # still pass through it, which is the phase ordering gap being
+                # measured.
+                self._emit(
+                    Decision(
+                        run_id=program_id,
+                        seq=self._next_seq(),
+                        iteration=step,
+                        accepted=False,
+                        optimization_type=opportunity.kind,
+                        reject_reason=RejectReason.NO_COST_IMPROVEMENT,
                     )
                 )
 
-                outcome = self._try(program_id, iteration, current, opportunity, model, counters)
-                if outcome is None:
-                    continue
+        environment = Environment(model, check, stats, record)
+        outcome = self.strategy.search(program, environment, max_iterations=config.max_iterations)
 
-                current, current_cost = outcome
-                applied.append(opportunity.kind.value)
-                progressed = True
-                break
+        for kind in outcome.applied:
+            self._emit(
+                Decision(
+                    run_id=program_id,
+                    seq=self._next_seq(),
+                    iteration=outcome.iterations,
+                    accepted=True,
+                    optimization_type=OptimizationType(kind),
+                    reject_reason=None,
+                )
+            )
 
-            iteration += 1
-            if not progressed:
-                break
-
-        final_cost = model.score(current)
-        match = verify(
+        final_check = verify(
             program,
-            current,
+            outcome.program,
             seed=config.seed,
             random_cases=config.random_cases,
             use_smt=False,
         )
+        proof: str | None = None
+        if config.prove_final:
+            proof = verify(program, outcome.program, seed=config.seed, use_smt=True).verdict.value
 
         self._emit(
             RunConverged(
                 run_id=program_id,
                 seq=self._next_seq(),
-                iteration=iteration,
-                final_tac=[str(i) for i in current],
-                final_cost=_cost_event(final_cost),
-                iterations=iteration,
-                proposals=counters["proposals"],
-                accepted=counters["accepted"],
-                output_match=not match.refuted,
+                iteration=outcome.iterations,
+                final_tac=[str(i) for i in outcome.program],
+                final_cost=_cost_event(model.score(outcome.program)),
+                iterations=outcome.iterations,
+                proposals=stats.proposals,
+                accepted=len(outcome.applied),
+                output_match=not final_check.refuted,
             )
         )
 
@@ -195,152 +278,30 @@ class Orchestrator:
             category=category,
             method=config.method,
             original=program,
-            final=current,
-            iterations=iteration,
-            proposals=counters["proposals"],
-            verified=counters["verified"],
-            accepted=counters["accepted"],
-            rejected_verification=counters["rejected_verification"],
-            rejected_cost=counters["rejected_cost"],
-            rejected_stale=counters["rejected_stale"],
+            final=outcome.program,
+            iterations=outcome.iterations,
+            proposals=stats.proposals,
+            verified=stats.verified,
+            refuted=stats.refuted,
+            cost_improving=improving_count,
+            accepted=len(outcome.applied),
+            stale=stats.stale,
+            nodes_expanded=stats.nodes_expanded,
             cost_before=model.score(program).total,
-            cost_after=final_cost.total,
-            output_match=not match.refuted,
-            applied=applied,
+            cost_after=outcome.cost,
+            output_match=not final_check.refuted,
+            final_proof=proof,
+            applied=list(outcome.applied),
         )
 
-    def _try(
-        self,
-        program_id: str,
-        iteration: int,
-        current: TacProgram,
-        opportunity: Opportunity,
-        model: CostModel,
-        counters: dict[str, int],
-    ) -> tuple[TacProgram, Cost] | None:
-        """One analyse-propose-verify-evaluate cycle. Returns the new state or None."""
-        candidate = apply(current, opportunity)
 
-        if candidate is None:
-            # The opportunity was computed against an earlier snapshot and no
-            # longer fits. Recorded rather than silently skipped, because the
-            # rate of this is worth reporting.
-            counters["rejected_stale"] += 1
-            self._emit(
-                Decision(
-                    run_id=program_id,
-                    seq=self._next_seq(),
-                    iteration=iteration,
-                    accepted=False,
-                    optimization_type=opportunity.kind,
-                    reject_reason=RejectReason.NOT_APPLICABLE,
-                )
-            )
-            return None
-
-        counters["proposals"] += 1
-        self._emit(
-            CandidateProposed(
-                run_id=program_id,
-                seq=self._next_seq(),
-                iteration=iteration,
-                optimization_type=opportunity.kind,
-                site=opportunity.site,
-                proposed_tac=[str(i) for i in candidate],
-                source="rule_based",
-                rationale=None,
-            )
-        )
-
-        outcome = verify(
-            current,
-            candidate,
-            seed=self.config.seed,
-            random_cases=self.config.random_cases,
-            use_smt=self.config.use_smt,
-        )
-        self._emit(
-            VerificationResult(
-                run_id=program_id,
-                seq=self._next_seq(),
-                iteration=iteration,
-                method=outcome.method,
-                verdict=outcome.verdict,
-                duration_ms=0.0,
-                inputs_tested=outcome.inputs_tested,
-                counterexample=outcome.counterexample,
-            )
-        )
-
-        if outcome.refuted:
-            counters["rejected_verification"] += 1
-            self._emit(
-                Decision(
-                    run_id=program_id,
-                    seq=self._next_seq(),
-                    iteration=iteration,
-                    accepted=False,
-                    optimization_type=opportunity.kind,
-                    reject_reason=RejectReason.VERIFICATION_FAILED,
-                )
-            )
-            return None
-
-        counters["verified"] += 1
-
-        before = model.score(current)
-        after = model.score(candidate)
-        improved = after.total < before.total
-
-        self._emit(
-            CostEvaluated(
-                run_id=program_id,
-                seq=self._next_seq(),
-                iteration=iteration,
-                cost_before=_cost_event(before),
-                cost_after=_cost_event(after),
-                improved=improved,
-            )
-        )
-
-        if not improved:
-            # Cost neutral changes are rejected because the spec says so. Some of
-            # them would unlock a saving on the next step, which is exactly the
-            # phase ordering gap the search methods are measured against.
-            counters["rejected_cost"] += 1
-            self._emit(
-                Decision(
-                    run_id=program_id,
-                    seq=self._next_seq(),
-                    iteration=iteration,
-                    accepted=False,
-                    optimization_type=opportunity.kind,
-                    reject_reason=RejectReason.NO_COST_IMPROVEMENT,
-                )
-            )
-            return None
-
-        counters["accepted"] += 1
-        self._emit(
-            Decision(
-                run_id=program_id,
-                seq=self._next_seq(),
-                iteration=iteration,
-                accepted=True,
-                optimization_type=opportunity.kind,
-                reject_reason=None,
-            )
-        )
-        return candidate, after
-
-
-def _cost_event(cost: Cost) -> CostEvent:
+def _cost_event(cost: Cost, *, override: float | None = None) -> CostEvent:
     return CostEvent(
         instruction_count=cost.raw.instruction_count,
         arithmetic_ops=cost.raw.arithmetic_ops,
         temp_vars=cost.raw.temp_vars,
         execution_time_us=cost.raw.execution_estimate,
-        weighted_total=cost.total,
+        weighted_total=cost.total if override is None else override,
     )
 
 
@@ -349,7 +310,10 @@ def optimize(
     *,
     config: RunConfig | None = None,
     sink: EventSink | None = None,
+    strategy: Strategy | None = None,
     program_id: str = "program",
     category: str = "mixed",
 ) -> RunResult:
-    return Orchestrator(config, sink).run(program, program_id=program_id, category=category)
+    return Orchestrator(config, sink, strategy).run(
+        program, program_id=program_id, category=category
+    )

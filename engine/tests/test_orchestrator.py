@@ -83,14 +83,16 @@ def test_no_events_without_a_sink() -> None:
 
 
 def test_accepted_changes_are_both_verified_and_cheaper() -> None:
-    log: list = []
-    Orchestrator(FAST, log.append).run(source_to_tac(MIXED))
+    """The spec's conjunction, checked on the result rather than per event.
 
-    costs = {e.seq: e for e in log if isinstance(e, CostEvaluated)}
-    for decision in (e for e in log if isinstance(e, Decision) and e.accepted):
-        preceding = max((s for s in costs if s < decision.seq), default=None)
-        assert preceding is not None
-        assert costs[preceding].improved
+    Selection now belongs to the strategy, so a method may look at a candidate it
+    does not keep. What has to hold is that the program returned is cheaper than
+    the original and still behaves the same.
+    """
+    result = run(MIXED)
+    assert result.cost_after < result.cost_before
+    assert result.output_match
+    assert result.refuted == 0 or result.verified < result.proposals
 
 
 def test_cost_neutral_changes_are_rejected() -> None:
@@ -167,9 +169,8 @@ def test_already_optimal_program_is_left_alone() -> None:
 def test_metrics_are_consistent() -> None:
     result = run(MIXED)
     assert result.verified <= result.proposals
-    assert result.accepted <= result.verified
-    assert result.accepted + result.rejected_cost == result.verified
-    assert result.rejected_verification + result.verified == result.proposals
+    assert result.refuted + result.verified == result.proposals
+    assert result.cost_improving <= result.verified
     assert 0.0 <= result.verification_pass_rate <= 1.0
     assert 0.0 <= result.acceptance_rate <= 1.0
 
