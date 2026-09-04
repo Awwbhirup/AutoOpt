@@ -184,5 +184,8 @@ def build_chain(cache_dir: str | Path | None = None) -> ProviderChain:
         gemini()
         groq()
 
-    providers.append(StubProvider())
+    # The stub is deliberately NOT in the chain. Putting it there makes it a
+    # provider that always succeeds, so it wins inside the loop and its answer
+    # gets cached, permanently recording the program as having nothing to do.
+    # ProviderChain falls through to it only when every real provider failed.
     return ProviderChain(providers, cache_dir or os.environ.get("AUTOOPT_LLM_CACHE_DIR"))
