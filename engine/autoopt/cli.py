@@ -20,9 +20,11 @@ from rich.table import Table
 
 from .datagen import generate
 from .events import Decision, Event, RunConverged, RunStarted, VerificationResult
-from .experiment import BatchProgress, run_experiment, summarise
+from .experiment import BatchProgress, iter_rows, run_experiment, summarise
+from .figures import THEMES, compute, render_all
 from .ir import source_to_tac
 from .orchestrator import RunConfig, optimize
+from .report import decision_log, summary_page
 from .search import METHOD_NAMES
 
 app = typer.Typer(add_completion=False, help="Autonomous program optimization agent.")
@@ -188,6 +190,82 @@ def summary(
     for method, value in sorted(by_method.items(), key=lambda item: -item[1]):
         table.add_row(method, f"{value:.1%}")
     console.print(table)
+
+
+@app.command()
+def figures(
+    data: Annotated[Path, typer.Option(help="Master CSV")] = Path("../data/runs/master.csv"),
+    out: Annotated[Path, typer.Option(help="Where to write images")] = Path(
+        "../reports/generated/figures"
+    ),
+    themes: Annotated[str, typer.Option(help="Comma separated: dark, light")] = "dark,light",
+) -> None:
+    """Render the six required figures."""
+    if not data.exists():
+        console.print(f"[red]no such file: {data}[/red]")
+        raise typer.Exit(1)
+
+    rows = list(iter_rows(data))
+    chosen = tuple(name.strip() for name in themes.split(","))
+    written = render_all(rows, out, chosen)
+
+    for path in written:
+        console.print(f"  {path}")
+    console.print(f"{len(written)} figures written")
+
+
+@app.command()
+def report(
+    data: Annotated[Path, typer.Option(help="Master CSV")] = Path("../data/runs/master.csv"),
+    out: Annotated[Path, typer.Option()] = Path("../reports/generated"),
+    theme: Annotated[str, typer.Option(help="dark or light")] = "dark",
+    logs_for: Annotated[str, typer.Option(help="Method whose decision logs to write")] = "astar",
+    log_limit: Annotated[int, typer.Option(help="How many decision logs, 0 for all")] = 0,
+) -> None:
+    """Write the summary page and the per-program decision logs."""
+    _load_env()
+    if not data.exists():
+        console.print(f"[red]no such file: {data}[/red]")
+        raise typer.Exit(1)
+
+    rows = list(iter_rows(data))
+    out.mkdir(parents=True, exist_ok=True)
+
+    figure_dir = out / "figures" / theme
+    if not figure_dir.exists():
+        console.print("rendering figures first")
+        render_all(rows, out / "figures", (theme,))
+
+    page = summary_page(rows, compute(rows), THEMES[theme], figure_dir)
+    index = out / "index.html"
+    index.write_text(page, encoding="utf-8")
+    console.print(f"  {index}")
+
+    # One decision log per program, which is the spec's expected output.
+    logs = out / "decision-logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    programs = generate()
+    if log_limit:
+        programs = programs[:log_limit]
+
+    written = 0
+    for program in programs:
+        events: list[Event] = []
+
+        def collect(event: Event, sink: list[Event] = events) -> None:
+            sink.append(event)
+
+        optimize(
+            source_to_tac(program.source),
+            config=RunConfig(method=logs_for),
+            sink=collect,
+            program_id=program.program_id,
+            category=program.category.value,
+        )
+        (logs / f"{program.program_id}.txt").write_text(decision_log(events), encoding="utf-8")
+        written += 1
+
+    console.print(f"  {logs}  ({written} decision logs, method={logs_for})")
 
 
 def main() -> int:

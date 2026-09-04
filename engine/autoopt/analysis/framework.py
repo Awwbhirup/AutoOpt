@@ -18,11 +18,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from enum import Enum, auto
-from typing import TypeVar
 
 from ..ir.cfg import ControlFlowGraph
-
-T = TypeVar("T")
 
 
 class Direction(Enum):
@@ -30,7 +27,7 @@ class Direction(Enum):
     BACKWARD = auto()
 
 
-def solve(
+def solve[T](
     cfg: ControlFlowGraph,
     *,
     direction: Direction,
@@ -93,7 +90,7 @@ def solve(
     return inputs, outputs
 
 
-def union(values: Iterable[frozenset[T]]) -> frozenset[T]:
+def union[T](values: Iterable[frozenset[T]]) -> frozenset[T]:
     """Meet for may-analyses: a fact holds if it holds on any incoming path."""
     result: frozenset[T] = frozenset()
     for value in values:
@@ -101,7 +98,7 @@ def union(values: Iterable[frozenset[T]]) -> frozenset[T]:
     return result
 
 
-def intersection(values: Iterable[frozenset[T]]) -> frozenset[T]:
+def intersection[T](values: Iterable[frozenset[T]]) -> frozenset[T]:
     """Meet for must-analyses: a fact holds only if it holds on every path.
 
     An empty sequence means the block has no predecessors, so nothing is known.

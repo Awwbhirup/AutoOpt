@@ -51,6 +51,8 @@ FIELDNAMES = [
     "output_match",
     "final_proof",
     "applied",
+    "by_kind",
+    "trajectory",
     "wall_ms",
     "error",
 ]
@@ -79,13 +81,25 @@ class BatchProgress:
 
 
 def _row_for(program: GeneratedProgram, method: str, config: RunConfig) -> dict[str, object]:
+    import json
+
     from .cost import measure
+    from .events import CostEvaluated
 
     started = time.monotonic()
     tac = source_to_tac(program.source)
+
+    # Cost after each accepted step, for the spec's per-iteration line chart.
+    trajectory: list[float] = []
+
+    def collect(event: object) -> None:
+        if isinstance(event, CostEvaluated) and event.improved:
+            trajectory.append(round(event.cost_after.weighted_total, 6))
+
     result = optimize(
         tac,
         config=config,
+        sink=collect,
         program_id=program.program_id,
         category=program.category.value,
     )
@@ -119,6 +133,8 @@ def _row_for(program: GeneratedProgram, method: str, config: RunConfig) -> dict[
         "output_match": int(result.output_match),
         "final_proof": result.final_proof or "",
         "applied": "|".join(result.applied),
+        "by_kind": json.dumps(result.by_kind, separators=(",", ":")),
+        "trajectory": "|".join(str(v) for v in trajectory),
         "wall_ms": round((time.monotonic() - started) * 1000, 2),
         "error": "",
     }

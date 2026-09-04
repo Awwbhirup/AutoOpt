@@ -78,6 +78,10 @@ class RunResult:
     output_match: bool
     final_proof: str | None = None
     applied: list[str] = field(default_factory=list)
+    #: transformation kind -> {proposed, refuted, improving, accepted}.
+    #: The spec wants accept/reject/invalid broken down per optimization type,
+    #: which totals alone cannot give.
+    by_kind: dict[str, dict[str, int]] = field(default_factory=dict)
 
     @property
     def cost_reduction(self) -> float:
@@ -122,6 +126,13 @@ class Orchestrator:
         model = CostModel.for_program(program, config.weights)
         stats = SearchStats()
         improving_count = 0
+        by_kind: dict[str, dict[str, int]] = {}
+
+        def bump(kind: str, field_name: str) -> None:
+            entry = by_kind.setdefault(
+                kind, {"proposed": 0, "refuted": 0, "improving": 0, "accepted": 0}
+            )
+            entry[field_name] += 1
 
         self._emit(
             RunStarted(
@@ -155,6 +166,7 @@ class Orchestrator:
         ) -> None:
             nonlocal improving_count
             step = stats.nodes_expanded
+            bump(opportunity.kind.value, "proposed")
 
             self._emit(
                 OpportunityFound(
@@ -192,6 +204,7 @@ class Orchestrator:
             )
 
             if outcome.refuted:
+                bump(opportunity.kind.value, "refuted")
                 self._emit(
                     Decision(
                         run_id=program_id,
@@ -207,6 +220,7 @@ class Orchestrator:
             improved = after_cost < before_cost
             if improved:
                 improving_count += 1
+                bump(opportunity.kind.value, "improving")
 
             self._emit(
                 CostEvaluated(
@@ -238,6 +252,7 @@ class Orchestrator:
         outcome = self.strategy.search(program, environment, max_iterations=config.max_iterations)
 
         for kind in outcome.applied:
+            bump(kind, "accepted")
             self._emit(
                 Decision(
                     run_id=program_id,
@@ -290,6 +305,7 @@ class Orchestrator:
             output_match=not final_check.refuted,
             final_proof=proof,
             applied=list(outcome.applied),
+            by_kind=by_kind,
         )
 
 

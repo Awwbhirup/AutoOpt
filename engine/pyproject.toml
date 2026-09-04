@@ -2,7 +2,7 @@
 name = "autoopt"
 version = "0.1.0"
 description = "Autonomous agent for verified, statistically-evaluated compiler optimization"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "typer>=0.12",
     "rich>=13.7",
@@ -44,19 +44,29 @@ include = ["autoopt*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 ignore = ["E501"]  # line length is handled by the formatter
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_unreachable = true
 # Third-party packages without bundled type stubs.
 [[tool.mypy.overrides]]
-module = ["scipy.*", "statsmodels.*", "sklearn.*", "z3.*", "plotly.*", "seaborn.*", "matplotlib.*"]
+module = [
+    "scipy.*",
+    "statsmodels.*",
+    "sklearn.*",
+    "z3.*",
+    "plotly.*",
+    "seaborn.*",
+    "matplotlib.*",
+    "numpy.*",
+    "pandas.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
