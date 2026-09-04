@@ -54,6 +54,9 @@ class RunConfig:
     prove_final: bool = False
     random_cases: int | None = None
     weights: CostWeights | None = None
+    #: Uniform cap on states expanded, so methods can be compared at equal effort.
+    #: None means unconstrained, which is what the capability run uses.
+    node_budget: int | None = None
 
 
 @dataclass(slots=True)
@@ -73,6 +76,7 @@ class RunResult:
     accepted: int
     stale: int
     nodes_expanded: int
+    budget_exhausted: bool
     cost_before: float
     cost_after: float
     output_match: bool
@@ -248,7 +252,7 @@ class Orchestrator:
                     )
                 )
 
-        environment = Environment(model, check, stats, record)
+        environment = Environment(model, check, stats, record, node_budget=config.node_budget)
         outcome = self.strategy.search(program, environment, max_iterations=config.max_iterations)
 
         for kind in outcome.applied:
@@ -300,6 +304,7 @@ class Orchestrator:
             accepted=len(outcome.applied),
             stale=stats.stale,
             nodes_expanded=stats.nodes_expanded,
+            budget_exhausted=stats.budget_exhausted,
             cost_before=model.score(program).total,
             cost_after=outcome.cost,
             output_match=not final_check.refuted,

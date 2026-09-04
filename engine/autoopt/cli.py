@@ -120,6 +120,9 @@ def experiment(
     seed: int = 0,
     prove: Annotated[bool, typer.Option(help="Prove original against final with Z3")] = True,
     resume: bool = True,
+    budgets: Annotated[
+        str, typer.Option(help="Node budgets, comma separated; 0 for unconstrained")
+    ] = "0",
 ) -> None:
     """Run the method x category grid and write the master CSV."""
     _load_env()
@@ -144,6 +147,9 @@ def experiment(
             f"[dim]{row['program_id']} {row['method']}[/dim]"
         )
 
+    caps = tuple(int(b.strip()) or None for b in budgets.split(","))
+    console.print(f"budgets: {', '.join(str(b or 'unconstrained') for b in caps)}")
+
     state = run_experiment(
         out,
         methods=chosen,
@@ -151,6 +157,7 @@ def experiment(
         limit=limit or None,
         prove_final=prove,
         resume=resume,
+        budgets=caps,
         on_progress=progress,
     )
 

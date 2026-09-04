@@ -27,6 +27,8 @@ FIELDNAMES = [
     "program_id",
     "category",
     "method",
+    "node_budget",
+    "budget_exhausted",
     "instructions_before",
     "instructions_after",
     "arithmetic_before",
@@ -109,6 +111,8 @@ def _row_for(program: GeneratedProgram, method: str, config: RunConfig) -> dict[
         "program_id": program.program_id,
         "category": program.category.value,
         "method": method,
+        "node_budget": config.node_budget if config.node_budget else 0,
+        "budget_exhausted": int(result.budget_exhausted),
         "instructions_before": before.instruction_count,
         "instructions_after": after.instruction_count,
         "arithmetic_before": before.arithmetic_ops,
@@ -154,11 +158,14 @@ def _failure_row(program: GeneratedProgram, method: str, error: Exception) -> di
     return row
 
 
-def _completed_cells(path: Path) -> set[tuple[str, str]]:
+def _completed_cells(path: Path) -> set[tuple[str, str, str]]:
     if not path.exists():
         return set()
     with path.open(newline="", encoding="utf-8") as handle:
-        return {(row["program_id"], row["method"]) for row in csv.DictReader(handle)}
+        return {
+            (row["program_id"], row["method"], row.get("node_budget", "0"))
+            for row in csv.DictReader(handle)
+        }
 
 
 def run_experiment(
@@ -169,6 +176,7 @@ def run_experiment(
     limit: int | None = None,
     prove_final: bool = True,
     resume: bool = True,
+    budgets: tuple[int | None, ...] = (None,),
     on_progress: Callable[[BatchProgress, dict[str, object]], None] | None = None,
 ) -> BatchProgress:
     """Run every (program, method) cell and append rows as they finish."""
@@ -190,7 +198,13 @@ def run_experiment(
     if not resume and output.exists():
         output.unlink()
 
-    cells = [(p, m) for m in methods for p in corpus if (p.program_id, m) not in done]
+    cells = [
+        (p, m, b)
+        for b in budgets
+        for m in methods
+        for p in corpus
+        if (p.program_id, m, str(b or 0)) not in done
+    ]
     progress = BatchProgress(total=len(cells))
 
     write_header = not output.exists() or output.stat().st_size == 0
@@ -200,8 +214,10 @@ def run_experiment(
             writer.writeheader()
             handle.flush()
 
-        for program, method in cells:
-            config = RunConfig(method=method, seed=seed, prove_final=prove_final)
+        for program, method, budget in cells:
+            config = RunConfig(
+                method=method, seed=seed, prove_final=prove_final, node_budget=budget
+            )
             try:
                 row = _row_for(program, method, config)
                 if not row["output_match"]:

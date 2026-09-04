@@ -54,6 +54,7 @@ class SearchStats:
     nodes_expanded: int = 0
     states_seen: int = 0
     restarts: int = 0
+    budget_exhausted: bool = False
 
 
 @dataclass
@@ -75,11 +76,17 @@ class Environment:
         stats: SearchStats,
         on_move: Callable[[Opportunity, TacProgram, VerificationOutcome, float, float], None]
         | None = None,
+        node_budget: int | None = None,
     ) -> None:
         self.model = model
         self.verify_fn = verify_fn
         self.stats = stats
         self.on_move = on_move
+        # A uniform cap on how many states any method may expand. Without it the
+        # methods cannot be compared at equal effort: greedy stops after about
+        # four expansions while A* uses ninety-six, so a difference between them
+        # measures how hard each tried, not how well it chose.
+        self.node_budget = node_budget
         self._cache: dict[str, list[Move]] = {}
         self._verdicts: dict[tuple[str, str], VerificationOutcome] = {}
 
@@ -95,6 +102,12 @@ class Environment:
         key = program.canonical_hash()
         if key in self._cache:
             return self._cache[key]
+
+        if self.node_budget is not None and self.stats.nodes_expanded >= self.node_budget:
+            # Out of budget. Returning nothing makes every strategy stop where it
+            # is and report the best state it reached.
+            self.stats.budget_exhausted = True
+            return []
 
         current_cost = self.cost(program)
         moves: list[Move] = []
