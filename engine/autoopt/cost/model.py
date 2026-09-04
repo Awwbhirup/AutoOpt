@@ -154,13 +154,17 @@ class CostModel:
         raw = reference.as_tuple()
         weight_values = self.weights.as_tuple()
         active = [index for index, value in enumerate(raw) if value > 0]
-        total_weight = sum(weight_values[index] for index in active)
 
+        # Weights are kept raw and the division happens once, at the end of of().
+        # Normalising each weight up front and summing the results leaves the
+        # original scoring 1.0 only if the rounding errors happen to cancel, and
+        # whether they do varies by platform. Dividing at the end makes the
+        # numerator for the original literally the same float as this
+        # denominator, so the ratio is exactly 1.0 everywhere.
         self._terms: tuple[tuple[int, float, float], ...] = tuple(
-            (index, weight_values[index] / total_weight, raw[index]) for index in active
+            (index, weight_values[index], raw[index]) for index in active
         )
-        if not self._terms:
-            self._terms = ()
+        self._total_weight = sum(weight for _, weight, _ in self._terms)
 
     @classmethod
     def for_program(cls, program: TacProgram, weights: CostWeights | None = None) -> CostModel:
@@ -170,9 +174,15 @@ class CostModel:
         return self.of(measure(program, cfg))
 
     def of(self, raw: RawCost) -> Cost:
+        if not self._total_weight:
+            return Cost(raw=raw, total=0.0)
         values = raw.as_tuple()
-        total = sum(weight * values[index] / divisor for index, weight, divisor in self._terms)
-        return Cost(raw=raw, total=total)
+        # Parenthesised deliberately. Without them this is (weight * value) /
+        # divisor, and (0.7 * 3.0) / 3.0 is 0.6999999999999998 rather than 0.7.
+        # Taking the ratio first makes it exactly 1.0 for the reference, so the
+        # weights add back up to the denominator and the original scores 1.0.
+        weighted = sum(weight * (values[index] / divisor) for index, weight, divisor in self._terms)
+        return Cost(raw=raw, total=weighted / self._total_weight)
 
     def reduction(self, cost: Cost) -> float:
         """Fraction saved against the original, which is the spec's Cost Reduction metric."""

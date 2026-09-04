@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from autoopt.cost import CostModel, CostWeights, measure
 from autoopt.ir import source_to_tac
 
@@ -9,6 +11,39 @@ def test_original_program_scores_one() -> None:
     program = source_to_tac("input n; int x = n + 1; print(x);")
     model = CostModel.for_program(program)
     assert model.score(program).total == 1.0
+
+
+ORIGINAL_SCORE_CASES = [
+    "input n; int x = n + 1; print(x);",
+    "input n; print(n);",
+    "input a; input b; print(a < b);",
+    "input n; int i = 0; while (i < n) { int c = n + 1; i = i + 1; } print(i);",
+    "input a; input b; int x = (a + b) * (a + b); int u = 9; print(x);",
+]
+
+WEIGHTINGS = [
+    CostWeights(),
+    CostWeights(0.7, 0.1, 0.1, 0.1),
+    CostWeights(1 / 3, 1 / 3, 1 / 3, 0.0),
+    CostWeights(0.25, 0.25, 0.25, 0.25),
+    CostWeights(0.9, 0.05, 0.03, 0.02),
+    CostWeights(1.0, 0.0, 0.0, 0.0),
+]
+
+
+@pytest.mark.parametrize("source", ORIGINAL_SCORE_CASES)
+@pytest.mark.parametrize("weights", WEIGHTINGS)
+def test_original_scores_exactly_one_for_any_weighting(source: str, weights: CostWeights) -> None:
+    """Exact equality on purpose, not approximate.
+
+    The property has to hold by construction rather than by rounding luck. It
+    fails if the weighted sum is written as weight * value / divisor, since that
+    parses as (weight * value) / divisor and (0.7 * 3.0) / 3.0 is not 0.7.
+    Whether the errors happen to cancel varies by platform, so a version that
+    passes locally can still fail elsewhere.
+    """
+    program = source_to_tac(source)
+    assert CostModel.for_program(program, weights).score(program).total == 1.0
 
 
 def test_reduction_against_itself_is_zero() -> None:
