@@ -140,19 +140,73 @@ class GeminiProvider(Provider):
         return str(payload["candidates"][0]["content"]["parts"][0]["text"])
 
 
+def parse_duration(text: str) -> float:
+    """Groq reports its reset window as "1m26.4s", "7.86s" or "1ms"."""
+    if not text:
+        return 0.0
+    total, number = 0.0, ""
+    units = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char.isdigit() or char == ".":
+            number += char
+            index += 1
+            continue
+        unit = text[index : index + 2] if text[index : index + 2] in units else char
+        total += float(number or 0) * units.get(unit, 0.0)
+        number = ""
+        index += len(unit)
+    return total
+
+
 class GroqProvider(Provider):
+    """Free tier, paced against a rolling per-minute token budget.
+
+    The daily request cap is not the binding constraint. A prompt here carries
+    the whole program listing and the catalogue, so a batch that fires as fast as
+    it can spends the minute's token budget in seconds and then spends the rest
+    of the minute being refused. Pacing turns that into a steady rate.
+    """
+
     name = "groq"
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
+
+    #: Floor between calls. Roughly a prompt's worth of the per-minute budget.
+    MIN_INTERVAL = 5.0
+    #: Below this many tokens left in the window, wait it out rather than be
+    #: refused and burn a retry.
+    LOW_WATER_TOKENS = 1500
 
     def __init__(self, api_key: str, model: str = "qwen/qwen3.8-27b") -> None:
         self.api_key = api_key
         self.model = model
+        self._next_allowed = 0.0
 
     @property
     def available(self) -> bool:
         return bool(self.api_key)
 
+    def _wait_for_slot(self) -> None:
+        pause = self._next_allowed - time.monotonic()
+        if pause > 0:
+            time.sleep(pause)
+
+    def _note_budget(self, response: httpx.Response) -> None:
+        """Pace from what the provider says is left, not from a guess."""
+        delay = self.MIN_INTERVAL
+        remaining = response.headers.get("x-ratelimit-remaining-tokens")
+        if remaining is not None:
+            try:
+                if int(remaining) < self.LOW_WATER_TOKENS:
+                    reset = parse_duration(response.headers.get("x-ratelimit-reset-tokens", ""))
+                    delay = max(delay, reset + 1.0)
+            except ValueError:
+                pass
+        self._next_allowed = time.monotonic() + delay
+
     def complete(self, prompt: str) -> str:
+        self._wait_for_slot()
         response = httpx.post(
             self.ENDPOINT,
             headers={"Authorization": f"Bearer {self.api_key}"},
@@ -169,6 +223,9 @@ class GroqProvider(Provider):
             },
             timeout=DEFAULT_TIMEOUT,
         )
+        # Before raise_for_status: a refusal carries the budget headers too, and
+        # that is exactly when knowing how long to wait matters most.
+        self._note_budget(response)
         response.raise_for_status()
         payload = response.json()
         return str(payload["choices"][0]["message"]["content"])
