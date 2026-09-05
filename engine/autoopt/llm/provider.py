@@ -240,19 +240,27 @@ class ProviderChain:
         cache_dir: str | Path | None = None,
         *,
         allow_fallback: bool = True,
+        namespace: str = "",
     ) -> None:
         self.providers = [p for p in providers if p.available]
         self.cache_dir = Path(cache_dir or DEFAULT_CACHE_DIR)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.failures: dict[str, int] = {}
         self.retries: dict[str, int] = {}
+        #: Part of the cache key, so two models do not share answers. Without it
+        #: a second model is served whatever the first one said, and a comparison
+        #: between them comes out identical for a reason nothing would report.
+        self.namespace = namespace or (
+            getattr(self.providers[0], "model", "") if self.providers else ""
+        )
         #: With fallback off only the first provider is used, and its failure
         #: stops the run. Cached answers are still served, so resuming skips
         #: everything already done.
         self.allow_fallback = allow_fallback
 
     def _cache_path(self, prompt: str) -> Path:
-        digest = hashlib.sha256(prompt.encode()).hexdigest()[:32]
+        keyed = f"{self.namespace}\0{prompt}"
+        digest = hashlib.sha256(keyed.encode()).hexdigest()[:32]
         return self.cache_dir / f"{digest}.json"
 
     def _clean(self, error: Exception) -> str:
@@ -307,7 +315,10 @@ class ProviderChain:
 
 
 def build_chain(
-    cache_dir: str | Path | None = None, *, allow_fallback: bool | None = None
+    cache_dir: str | Path | None = None,
+    *,
+    allow_fallback: bool | None = None,
+    model: str | None = None,
 ) -> ProviderChain:
     """Gemini, then Groq, then the stub, using whatever keys are in the environment."""
     providers: list[Provider] = []
@@ -325,15 +336,18 @@ def build_chain(
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     groq_key = os.environ.get("GROQ_API_KEY", "")
 
+    # An explicit model wins, so the two LLM arms can each name their own without
+    # having to reach through the environment.
+    gemini_model = model or os.environ.get("AUTOOPT_LLM_MODEL", "gemini-3.6-flash")
+    groq_model = model or os.environ.get("AUTOOPT_GROQ_MODEL", "qwen/qwen3.8-27b")
+
     def gemini() -> None:
         if gemini_key:
-            providers.append(
-                GeminiProvider(gemini_key, os.environ.get("AUTOOPT_LLM_MODEL", "gemini-3.6-flash"))
-            )
+            providers.append(GeminiProvider(gemini_key, gemini_model))
 
     def groq() -> None:
         if groq_key:
-            providers.append(GroqProvider(groq_key))
+            providers.append(GroqProvider(groq_key, groq_model))
 
     if preferred == "groq":
         groq()

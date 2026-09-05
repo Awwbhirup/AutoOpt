@@ -86,6 +86,9 @@ class RunResult:
     #: The spec wants accept/reject/invalid broken down per optimization type,
     #: which totals alone cannot give.
     by_kind: dict[str, dict[str, int]] = field(default_factory=dict)
+    #: Calls, validity rate and the failure breakdown, for LLM methods. None for
+    #: the rule-based ones, which have no such notion.
+    llm: dict[str, object] | None = None
 
     @property
     def cost_reduction(self) -> float:
@@ -311,7 +314,27 @@ class Orchestrator:
             final_proof=proof,
             applied=list(outcome.applied),
             by_kind=by_kind,
+            llm=self._llm_stats(),
         )
+
+    def _llm_stats(self) -> dict[str, object] | None:
+        """LLM Validity Rate and its breakdown, for methods that have one.
+
+        The spec lists validity as a reported metric, so it belongs in the row
+        rather than in console output that nothing keeps.
+        """
+        specialist = getattr(self.strategy, "specialist", None)
+        if specialist is None:
+            return None
+
+        stats = specialist.stats
+        return {
+            "calls": stats.calls,
+            "cached": stats.cached,
+            "validity_rate": stats.validity_rate,
+            "by_validity": dict(stats.by_validity),
+            "by_provider": dict(stats.by_provider),
+        }
 
 
 def _cost_event(cost: Cost, *, override: float | None = None) -> CostEvent:

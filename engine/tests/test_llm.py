@@ -268,3 +268,106 @@ def test_cached_answers_still_serve_with_fallback_off(tmp_path: Path) -> None:
 
     stopped = ProviderChain([FailingProvider()], cache_dir=tmp_path, allow_fallback=False)
     assert stopped.complete("prompt").cached
+
+
+# --- validity means applicability, not formatting -----------------------------
+
+
+def test_a_well_formed_but_inapplicable_proposal_is_not_valid(tmp_path: Path) -> None:
+    """The metric the spec asks for, measured where it is recorded.
+
+    Validity used to be banked at parse time, before the only check that could
+    falsify it. Anything that was JSON, named a catalogue entry and cited a real
+    line counted as valid, so the rate read 100% and was really measuring whether
+    the model can format JSON. Naming where a transformation legally applies is
+    the actual task.
+    """
+    specialist, _ = specialist_for([reply("loop_invariant_code_motion", 1)], tmp_path)
+
+    proposal = specialist.propose(source_to_tac(SOURCE))
+
+    assert proposal.validity is Validity.NOT_AVAILABLE
+    assert proposal.opportunity is None
+    assert specialist.stats.validity_rate == 0.0
+
+
+def test_validity_rate_sits_between_the_extremes(tmp_path: Path) -> None:
+    specialist, _ = specialist_for(
+        [
+            reply("constant_folding", 0),
+            reply("loop_invariant_code_motion", 1),
+            reply("constant_folding", 0),
+        ],
+        tmp_path,
+    )
+    program = source_to_tac(SOURCE)
+
+    specialist.propose(program)
+    specialist.propose(program, ruled_out=("a",))
+    specialist.propose(program, ruled_out=("a", "b"))
+
+    assert specialist.stats.calls == 3
+    assert 0.0 < specialist.stats.validity_rate < 1.0
+
+
+def test_declining_is_excluded_from_the_rate(tmp_path: Path) -> None:
+    """Nothing to do here is a correct answer, not a failed one."""
+    specialist, _ = specialist_for(
+        [
+            reply("constant_folding", 0),
+            json.dumps({"optimization_type": "none", "site": -1, "rationale": "clean"}),
+        ],
+        tmp_path,
+    )
+    program = source_to_tac(SOURCE)
+
+    specialist.propose(program)
+    specialist.propose(program, ruled_out=("a",))
+
+    assert specialist.stats.validity_rate == 1.0
+
+
+# --- one cache entry per model ------------------------------------------------
+
+
+def test_two_models_do_not_share_cached_answers(tmp_path: Path) -> None:
+    """Otherwise a second model is served the first one's answers.
+
+    The comparison between two models would then come out identical, for a
+    reason nothing in the output would report.
+    """
+    small = ScriptedProvider([reply("constant_folding", 0)])
+    large = ScriptedProvider([reply("dead_code_elimination", 3)])
+    small.model = "model-small"  # type: ignore[attr-defined]
+    large.model = "model-large"  # type: ignore[attr-defined]
+
+    first = ProviderChain([small], cache_dir=tmp_path)
+    second = ProviderChain([large], cache_dir=tmp_path)
+
+    assert first.complete("same prompt").text != second.complete("same prompt").text
+    assert large.prompts, "the second model was served the first model's cache"
+
+
+def test_the_same_model_still_reuses_its_cache(tmp_path: Path) -> None:
+    provider = ScriptedProvider([reply("constant_folding", 0)])
+    provider.model = "model-small"  # type: ignore[attr-defined]
+
+    ProviderChain([provider], cache_dir=tmp_path).complete("same prompt")
+    again = ProviderChain([provider], cache_dir=tmp_path).complete("same prompt")
+
+    assert again.cached
+    assert len(provider.prompts) == 1
+
+
+# --- the arm registry is the single place a model is added --------------------
+
+
+def test_every_registered_arm_builds(tmp_path: Path) -> None:
+    del tmp_path
+    from autoopt.arms import LLM_ARMS
+    from autoopt.search import METHOD_NAMES, build_strategy
+
+    for arm in LLM_ARMS:
+        assert arm in METHOD_NAMES
+        strategy = build_strategy(arm)
+        assert strategy.name == arm, "the arm name has to survive onto the strategy"

@@ -20,12 +20,12 @@ valid.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 from ..events import OptimizationType
-from ..ir import TacProgram
-from ..rules import Opportunity
+from ..ir import TacProgram, build_cfg
+from ..rules import Opportunity, analyse
 from .provider import Completion, ProviderChain, build_chain
 
 CATALOG = [kind.value for kind in OptimizationType]
@@ -59,6 +59,11 @@ class Validity(StrEnum):
     UNPARSEABLE = "unparseable"
     UNKNOWN_TYPE = "unknown_type"
     BAD_SITE = "bad_site"
+    #: Well formed, in the catalogue, real line number, and still wrong: that
+    #: transformation does not apply there. This is the interesting failure and
+    #: the one the metric is supposed to be about. Emitting JSON is easy; knowing
+    #: where in the code a transformation is legal is the actual task.
+    NOT_AVAILABLE = "not_available"
 
 
 @dataclass
@@ -77,10 +82,16 @@ class LlmStats:
 
     @property
     def validity_rate(self) -> float:
-        """Share of calls that produced a usable proposal, per the spec's metric.
+        """Share of calls that named a transformation that genuinely applies.
 
         Declining counts as neither valid nor invalid and is excluded, since
         "nothing to do here" is a correct answer rather than a failed one.
+
+        This used to be recorded before applicability was checked, so anything
+        well formed counted as valid and the rate read 100%. That measured
+        whether the model can emit JSON, which is not the question. A proposal is
+        valid only if the transformation it names is actually available at the
+        line it gives.
         """
         considered = self.calls - self.by_validity.get(Validity.DECLINED.value, 0)
         return self.by_validity.get(Validity.VALID.value, 0) / considered if considered else 0.0
@@ -105,12 +116,14 @@ class Proposal:
             return f"{self.named_type!r} is not in the allowed list; use one of the strings above"
         if self.validity is Validity.BAD_SITE:
             return f"{self.named_type} at line {self.named_site}: no such line in this program"
+        if self.validity is Validity.NOT_AVAILABLE:
+            return f"{self.named_type} at line {self.named_site}: not applicable there"
         return f"{self.named_type} at line {self.named_site}"
 
 
 class LlmSpecialist:
-    def __init__(self, chain: ProviderChain | None = None) -> None:
-        self.chain = chain or build_chain()
+    def __init__(self, chain: ProviderChain | None = None, model: str | None = None) -> None:
+        self.chain = chain or build_chain(model=model)
         self.stats = LlmStats()
 
     def propose(self, program: TacProgram, ruled_out: tuple[str, ...] = ()) -> Proposal:
@@ -134,9 +147,26 @@ class LlmSpecialist:
         )
 
         completion = self.chain.complete(prompt)
-        proposal = self._parse(completion, program)
+        proposal = self._confirm(self._parse(completion, program), program)
         self.stats.record(proposal.validity, completion)
         return proposal
+
+    def _confirm(self, proposal: Proposal, program: TacProgram) -> Proposal:
+        """Check the named transformation is really available where it was named.
+
+        Done here rather than in the caller so that validity is decided in one
+        place, at the moment it is recorded. Splitting the two is how the rate
+        came to be counted before the only check that could falsify it.
+        """
+        if proposal.opportunity is None:
+            return proposal
+
+        named = proposal.opportunity
+        available = analyse(build_cfg(program))
+        if any(o.kind is named.kind and o.site == named.site for o in available):
+            return proposal
+
+        return replace(proposal, validity=Validity.NOT_AVAILABLE, opportunity=None)
 
     def _parse(self, completion: Completion, program: TacProgram) -> Proposal:
         text = completion.text.strip()

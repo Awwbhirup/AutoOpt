@@ -56,6 +56,13 @@ FIELDNAMES = [
     "applied",
     "by_kind",
     "trajectory",
+    # LLM methods only. Blank for the rule-based ones, which have no such
+    # notion; the spec lists validity as a reported metric, so it belongs in
+    # the dataset rather than in console output nothing keeps.
+    "llm_calls",
+    "llm_cached",
+    "llm_validity_rate",
+    "llm_by_validity",
     "wall_ms",
     "error",
 ]
@@ -107,6 +114,7 @@ def _row_for(program: GeneratedProgram, method: str, config: RunConfig) -> dict[
         category=program.category.value,
     )
     before, after = measure(result.original), measure(result.final)
+    llm = result.llm
 
     return {
         "program_id": program.program_id,
@@ -140,6 +148,12 @@ def _row_for(program: GeneratedProgram, method: str, config: RunConfig) -> dict[
         "applied": "|".join(result.applied),
         "by_kind": json.dumps(result.by_kind, separators=(",", ":")),
         "trajectory": "|".join(str(v) for v in trajectory),
+        "llm_calls": llm.get("calls", "") if llm else "",
+        "llm_cached": llm.get("cached", "") if llm else "",
+        "llm_validity_rate": llm.get("validity_rate", "") if llm else "",
+        "llm_by_validity": (
+            json.dumps(llm.get("by_validity", {}), separators=(",", ":")) if llm else ""
+        ),
         "wall_ms": round((time.monotonic() - started) * 1000, 2),
         "error": "",
     }

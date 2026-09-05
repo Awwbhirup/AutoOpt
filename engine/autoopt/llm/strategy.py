@@ -23,14 +23,12 @@ second is the one the comparison against the rule-based path is read as making.
 
 from __future__ import annotations
 
-from ..ir import TacProgram, build_cfg
-from ..rules import analyse
+from ..ir import TacProgram
 from ..search.base import Environment, SearchResult, Strategy
 from .specialist import LlmSpecialist, Validity
 
 
 class LlmStrategy(Strategy):
-    name = "llm"
     crosses_plateaus = False
 
     def __init__(
@@ -38,8 +36,14 @@ class LlmStrategy(Strategy):
         specialist: LlmSpecialist | None = None,
         max_calls: int = 12,
         max_consecutive_failures: int = 3,
+        name: str = "llm",
+        model: str | None = None,
     ) -> None:
-        self.specialist = specialist or LlmSpecialist()
+        #: Per instance, not per class: the two LLM arms are the same strategy
+        #: pointed at different models, and they have to be separable levels of
+        #: the method factor.
+        self.name = name
+        self.specialist = specialist or LlmSpecialist(model=model)
         #: Bounds spend per program. Convergence is usually well inside this.
         self.max_calls = max_calls
         #: Gives up on a program after this many unusable answers in a row, so a
@@ -66,28 +70,16 @@ class LlmStrategy(Strategy):
                 break
 
             if proposal.opportunity is None:
-                # Unparseable, outside the catalog, or a line that does not exist.
+                # Unparseable, outside the catalog, a line that does not exist, or
+                # a transformation that does not apply where it was named. The
+                # specialist has already classified and counted which.
                 ruled_out.append(proposal.as_ruled_out())
                 consecutive_failures += 1
                 continue
 
             named = proposal.opportunity
-            available = analyse(build_cfg(current))
-            match = next(
-                (o for o in available if o.kind is named.kind and o.site == named.site),
-                None,
-            )
-            if match is None:
-                # Named a transformation that is not actually available there.
-                self.specialist.stats.by_validity["not_available"] = (
-                    self.specialist.stats.by_validity.get("not_available", 0) + 1
-                )
-                ruled_out.append(f"{named.kind.value} at line {named.site}: not applicable there")
-                consecutive_failures += 1
-                continue
-
             moves = {(m.kind, m.opportunity.site): m for m in env.successors(current)}
-            move = moves.get((match.kind, match.site))
+            move = moves.get((named.kind, named.site))
             if move is None or move.cost >= env.cost(current):
                 ruled_out.append(f"{named.kind.value} at line {named.site}: does not lower cost")
                 consecutive_failures += 1
