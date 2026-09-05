@@ -12,9 +12,11 @@ skipped on a restart, so an interrupted run resumes instead of starting over.
 from __future__ import annotations
 
 import csv
+import os
 import time
 import traceback
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -195,6 +197,63 @@ def run_experiment(
     on_progress: Callable[[BatchProgress, dict[str, object]], None] | None = None,
 ) -> BatchProgress:
     """Run every (program, method) cell and append rows as they finish."""
+    with _exclusive(output):
+        return _run_experiment(
+            output,
+            methods=methods,
+            seed=seed,
+            limit=limit,
+            prove_final=prove_final,
+            resume=resume,
+            budgets=budgets,
+            on_progress=on_progress,
+        )
+
+
+class ConcurrentRunError(RuntimeError):
+    """Another run already owns this output file."""
+
+
+@contextmanager
+def _exclusive(output: Path) -> Iterator[None]:
+    """One run per output file.
+
+    Rows are appended and resume reads back what is already there, so two runs
+    sharing an output do not conflict loudly. They interleave: every cell is done
+    twice, the file gains duplicate rows, and against a rate limited API the
+    quota is spent twice as fast for the same result. That is worth refusing
+    rather than discovering in the data later.
+    """
+    lock = output.with_suffix(output.suffix + ".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        held = lock.read_text(encoding="utf-8").strip() or "unknown"
+        raise ConcurrentRunError(
+            f"{output.name} is being written by pid {held}. Wait for it, or delete "
+            f"{lock} if that process is gone."
+        ) from None
+
+    try:
+        os.write(handle, str(os.getpid()).encode())
+        os.close(handle)
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def _run_experiment(
+    output: Path,
+    *,
+    methods: tuple[str, ...] = METHOD_NAMES,
+    seed: int = 0,
+    limit: int | None = None,
+    prove_final: bool = True,
+    resume: bool = True,
+    budgets: tuple[int | None, ...] = (None,),
+    on_progress: Callable[[BatchProgress, dict[str, object]], None] | None = None,
+) -> BatchProgress:
     corpus = generate()
     if limit is not None:
         # Take a slice of each category rather than the first N programs, so a

@@ -21,7 +21,7 @@ from rich.table import Table
 
 from .datagen import generate
 from .events import Decision, Event, RunConverged, RunStarted, VerificationResult
-from .experiment import BatchProgress, iter_rows, run_experiment, summarise
+from .experiment import FIELDNAMES, BatchProgress, iter_rows, run_experiment, summarise
 from .figures import THEMES, compute, render_all
 from .ir import source_to_tac
 from .llm.provider import ProviderExhaustedError
@@ -369,22 +369,35 @@ def merge(
         console.print(f"[red]no such file: {', '.join(str(p) for p in missing)}[/red]")
         raise typer.Exit(1)
 
-    header: list[str] | None = None
+    # Files recorded at different times have different columns: the capability
+    # grid predates node budgets, and only the LLM arms carry validity. Aligning
+    # on the union and filling the gaps is the honest merge, but which columns
+    # were missing where is reported rather than silently papered over.
+    seen: list[str] = []
     rows: list[dict[str, str]] = []
+    absent: dict[str, list[str]] = {}
+
     for path in sources:
         with path.open(encoding="utf-8", newline="") as handle:
             reader = _csv.DictReader(handle)
             if reader.fieldnames is None:
                 console.print(f"[red]{path} is empty[/red]")
                 raise typer.Exit(1)
-            if header is None:
-                header = list(reader.fieldnames)
-            elif list(reader.fieldnames) != header:
-                console.print(f"[red]{path} has different columns to {sources[0]}[/red]")
-                raise typer.Exit(1)
+            for column in reader.fieldnames:
+                if column not in seen:
+                    seen.append(column)
+            absent[str(path)] = list(reader.fieldnames)
             rows.extend(reader)
 
-    assert header is not None
+    # Known columns in their canonical order, then anything unrecognised.
+    header = [c for c in FIELDNAMES if c in seen] + [c for c in seen if c not in FIELDNAMES]
+
+    for source, present in absent.items():
+        gaps = [c for c in header if c not in present]
+        if gaps:
+            console.print(f"[dim]{source}: no {', '.join(gaps)}; filled blank[/dim]")
+
+    rows = [{column: row.get(column, "") for column in header} for row in rows]
 
     # One row per (program, method, budget). A re-run of a cell replaces the
     # earlier one rather than being counted twice, with later files winning.

@@ -25,9 +25,10 @@ import httpx
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_CACHE_DIR = ".llm_cache"
 
-#: The reply is one small JSON object. Providers that reserve the model's whole
-#: output window against a per-minute budget reject the call otherwise.
-MAX_OUTPUT_TOKENS = 256
+#: The reply is one small JSON object, well under a hundred tokens. Providers
+#: reserve this whole number against a per-minute budget whether it is used or
+#: not, so a generous ceiling directly cuts how many calls fit in a minute.
+MAX_OUTPUT_TOKENS = 128
 
 
 #: Attempts per provider before giving up on a prompt, and the pause before each
@@ -35,7 +36,9 @@ MAX_OUTPUT_TOKENS = 256
 #: program batch on one of those wastes a day of quota for nothing. A daily cap
 #: survives all four attempts and stops the run, which is the intended behaviour.
 MAX_ATTEMPTS = 4
-BACKOFF_SECONDS = (2.0, 8.0, 20.0)
+#: Long enough in total to outlast a one minute token window. Shorter waits meant
+#: a per-minute limit looked like a daily one and stopped the batch.
+BACKOFF_SECONDS = (5.0, 20.0, 40.0)
 
 #: Status codes worth waiting out. 429 covers both a per-minute limit, which
 #: clears in seconds, and a daily cap, which does not; retrying tells them apart
@@ -172,8 +175,10 @@ class GroqProvider(Provider):
     name = "groq"
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
-    #: Floor between calls. Roughly a prompt's worth of the per-minute budget.
-    MIN_INTERVAL = 5.0
+    #: Floor between calls, chosen to sit near 60% of the per-minute token
+    #: budget rather than at its edge, so an unusually long program does not
+    #: tip the window over.
+    MIN_INTERVAL = 6.0
     #: Below this many tokens left in the window, wait it out rather than be
     #: refused and burn a retry.
     LOW_WATER_TOKENS = 1500

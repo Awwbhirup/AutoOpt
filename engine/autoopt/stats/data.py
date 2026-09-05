@@ -120,6 +120,11 @@ def load(path: str | Path) -> Dataset:
         "nodes_expanded",
         "output_match",
         "wall_ms",
+        # Present only for the LLM arms. NaN elsewhere, which is correct:
+        # a rule-based method has no validity rate to report.
+        "llm_calls",
+        "llm_cached",
+        "llm_validity_rate",
     ]
     for column in numeric:
         if column in frame:
