@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,23 @@ import httpx
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_CACHE_DIR = ".llm_cache"
 
+#: The reply is one small JSON object. Providers that reserve the model's whole
+#: output window against a per-minute budget reject the call otherwise.
+MAX_OUTPUT_TOKENS = 256
+
+
+#: Attempts per provider before giving up on a prompt, and the pause before each
+#: retry. A 503 or a per-minute rate limit is a blip; stopping a five hundred
+#: program batch on one of those wastes a day of quota for nothing. A daily cap
+#: survives all four attempts and stops the run, which is the intended behaviour.
+MAX_ATTEMPTS = 4
+BACKOFF_SECONDS = (2.0, 8.0, 20.0)
+
+#: Status codes worth waiting out. 429 covers both a per-minute limit, which
+#: clears in seconds, and a daily cap, which does not; retrying tells them apart
+#: without having to parse the provider's error body.
+RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+
 
 class ProviderExhaustedError(RuntimeError):
     """Every permitted provider failed and falling back was not allowed.
@@ -32,6 +50,25 @@ class ProviderExhaustedError(RuntimeError):
     a different model. A dataset where some rows came from one model and the rest
     from another cannot be reported as one method.
     """
+
+
+def _is_transient(error: Exception) -> bool:
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code in RETRYABLE_STATUS
+    return isinstance(error, httpx.TimeoutException | httpx.TransportError)
+
+
+def redact(text: str, secrets: list[str]) -> str:
+    """Keep credentials out of anything that gets printed or written to disk.
+
+    The key is sent as a header now, so this is a second line rather than the
+    only one, but error text from a provider is not ours and should not be
+    trusted to be clean.
+    """
+    for secret in secrets:
+        if secret and len(secret) > 8:
+            text = text.replace(secret, f"{secret[:4]}...redacted")
+    return text
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +121,11 @@ class GeminiProvider(Provider):
     def complete(self, prompt: str) -> str:
         response = httpx.post(
             self.ENDPOINT.format(model=self.model),
-            params={"key": self.api_key},
+            # In the header, not as a ?key= query parameter. httpx puts the full
+            # URL in the exception message, so a query parameter ends up in the
+            # console and in the error column of the run CSV the moment the API
+            # returns anything but 200.
+            headers={"x-goog-api-key": self.api_key},
             json={
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
@@ -120,6 +161,11 @@ class GroqProvider(Provider):
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0,
                 "response_format": {"type": "json_object"},
+                # Without this Groq reserves the model's full output window
+                # against a per-minute output token budget and rejects the
+                # request before running it. The reply is a three field JSON
+                # object, so the real ceiling is nowhere near this.
+                "max_tokens": MAX_OUTPUT_TOKENS,
             },
             timeout=DEFAULT_TIMEOUT,
         )
@@ -142,6 +188,7 @@ class ProviderChain:
         self.cache_dir = Path(cache_dir or DEFAULT_CACHE_DIR)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.failures: dict[str, int] = {}
+        self.retries: dict[str, int] = {}
         #: With fallback off only the first provider is used, and its failure
         #: stops the run. Cached answers are still served, so resuming skips
         #: everything already done.
@@ -150,6 +197,23 @@ class ProviderChain:
     def _cache_path(self, prompt: str) -> Path:
         digest = hashlib.sha256(prompt.encode()).hexdigest()[:32]
         return self.cache_dir / f"{digest}.json"
+
+    def _clean(self, error: Exception) -> str:
+        keys = [getattr(provider, "api_key", "") for provider in self.providers]
+        return redact(str(error), keys)
+
+    def _with_retries(self, provider: Provider, prompt: str) -> str:
+        """One provider, retried through blips but not through a daily cap."""
+        for attempt in range(MAX_ATTEMPTS):
+            try:
+                return provider.complete(prompt)
+            except Exception as error:
+                last = attempt == MAX_ATTEMPTS - 1
+                if last or not _is_transient(error):
+                    raise
+                self.retries[provider.name] = self.retries.get(provider.name, 0) + 1
+                time.sleep(BACKOFF_SECONDS[min(attempt, len(BACKOFF_SECONDS) - 1)])
+        raise AssertionError("unreachable")
 
     def complete(self, prompt: str) -> Completion:
         path = self._cache_path(prompt)
@@ -161,13 +225,14 @@ class ProviderChain:
 
         for provider in permitted:
             try:
-                text = provider.complete(prompt)
+                text = self._with_retries(provider, prompt)
             except Exception as error:  # any failure just moves to the next provider
                 self.failures[provider.name] = self.failures.get(provider.name, 0) + 1
                 if not self.allow_fallback:
                     raise ProviderExhaustedError(
-                        f"{provider.name} failed and fallback is off: {error}"
-                    ) from error
+                        f"{provider.name} failed after {MAX_ATTEMPTS} attempts and "
+                        f"fallback is off: {self._clean(error)}"
+                    ) from None
                 continue
 
             path.write_text(json.dumps({"text": text, "provider": provider.name}), encoding="utf-8")
