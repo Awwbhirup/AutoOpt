@@ -8,6 +8,7 @@ autoopt summary     headline numbers from an existing master CSV
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ from .events import Decision, Event, RunConverged, RunStarted, VerificationResul
 from .experiment import BatchProgress, iter_rows, run_experiment, summarise
 from .figures import THEMES, compute, render_all
 from .ir import source_to_tac
+from .llm.provider import ProviderExhaustedError
 from .orchestrator import RunConfig, optimize
 from .report import decision_log, summary_page
 from .search import METHOD_NAMES
@@ -123,9 +125,16 @@ def experiment(
     budgets: Annotated[
         str, typer.Option(help="Node budgets, comma separated; 0 for unconstrained")
     ] = "0",
+    fallback: Annotated[
+        bool, typer.Option(help="Allow falling back to the next LLM provider mid-run")
+    ] = True,
 ) -> None:
     """Run the method x category grid and write the master CSV."""
     _load_env()
+    if not fallback:
+        # Keeps every row on one model. The run stops when that model's quota is
+        # gone; --resume picks it up from the same CSV.
+        os.environ["AUTOOPT_LLM_FALLBACK"] = "0"
     chosen = METHOD_NAMES if methods == "all" else tuple(m.strip() for m in methods.split(","))
     unknown = [m for m in chosen if m not in METHOD_NAMES]
     if unknown:
@@ -150,16 +159,25 @@ def experiment(
     caps = tuple(int(b.strip()) or None for b in budgets.split(","))
     console.print(f"budgets: {', '.join(str(b or 'unconstrained') for b in caps)}")
 
-    state = run_experiment(
-        out,
-        methods=chosen,
-        seed=seed,
-        limit=limit or None,
-        prove_final=prove,
-        resume=resume,
-        budgets=caps,
-        on_progress=progress,
-    )
+    try:
+        state = run_experiment(
+            out,
+            methods=chosen,
+            seed=seed,
+            limit=limit or None,
+            prove_final=prove,
+            resume=resume,
+            budgets=caps,
+            on_progress=progress,
+        )
+    except ProviderExhaustedError as error:
+        console.print(f"\n[yellow]stopped: {error}[/yellow]")
+        console.print(
+            "Completed rows are in the CSV. Rerun the same command when quota "
+            "returns and --resume continues from there."
+        )
+        summary(out)
+        raise typer.Exit(2) from error
 
     console.print(
         f"\ndone in {state.elapsed / 60:.1f}m: {state.completed} cells, "

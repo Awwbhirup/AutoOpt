@@ -38,7 +38,7 @@ Allowed transformations (use one of these strings exactly):
 
 Program (each line prefixed by its index):
 {listing}
-
+{ruled_out}
 Reply with JSON only:
 {{"optimization_type": "<one of the allowed strings>",
   "site": <integer line index to transform>,
@@ -46,6 +46,11 @@ Reply with JSON only:
 
 If nothing can safely be improved, use "none" with site -1.
 Do not explain outside the JSON."""
+
+RULED_OUT_BLOCK = """
+Already tried on this exact program and rejected. Pick something else:
+{items}
+"""
 
 
 class Validity(StrEnum):
@@ -87,6 +92,20 @@ class Proposal:
     opportunity: Opportunity | None = None
     rationale: str = ""
     provider: str = ""
+    #: What the model actually said, kept even when it was unusable, so the next
+    #: prompt can name it rather than saying "that was wrong" with no referent.
+    named_type: str = ""
+    named_site: int = -1
+
+    def as_ruled_out(self) -> str:
+        """One line telling the model what not to repeat, and why."""
+        if self.validity is Validity.UNPARSEABLE:
+            return "your previous reply was not valid JSON; reply with JSON only"
+        if self.validity is Validity.UNKNOWN_TYPE:
+            return f"{self.named_type!r} is not in the allowed list; use one of the strings above"
+        if self.validity is Validity.BAD_SITE:
+            return f"{self.named_type} at line {self.named_site}: no such line in this program"
+        return f"{self.named_type} at line {self.named_site}"
 
 
 class LlmSpecialist:
@@ -94,9 +113,25 @@ class LlmSpecialist:
         self.chain = chain or build_chain()
         self.stats = LlmStats()
 
-    def propose(self, program: TacProgram) -> Proposal:
+    def propose(self, program: TacProgram, ruled_out: tuple[str, ...] = ()) -> Proposal:
+        """One proposal, told what has already been rejected on this program.
+
+        Temperature is zero, so re-asking an unchanged prompt returns the same
+        answer and a retry loop would spin. Feeding the rejections back changes
+        the prompt, which is what makes asking again worth anything, and keeps
+        the run reproducible and separately cached.
+        """
         listing = "\n".join(f"{i}: {instruction}" for i, instruction in enumerate(program))
-        prompt = PROMPT.format(catalog="\n".join(f"- {name}" for name in CATALOG), listing=listing)
+        block = (
+            RULED_OUT_BLOCK.format(items="\n".join(f"- {item}" for item in ruled_out))
+            if ruled_out
+            else ""
+        )
+        prompt = PROMPT.format(
+            catalog="\n".join(f"- {name}" for name in CATALOG),
+            listing=listing,
+            ruled_out=block,
+        )
 
         completion = self.chain.complete(prompt)
         proposal = self._parse(completion, program)
@@ -127,16 +162,30 @@ class LlmSpecialist:
         if kind_name not in CATALOG:
             # A transformation the catalog does not contain. Counted, not crashed on.
             return Proposal(
-                Validity.UNKNOWN_TYPE, rationale=rationale, provider=completion.provider
+                Validity.UNKNOWN_TYPE,
+                rationale=rationale,
+                provider=completion.provider,
+                named_type=kind_name,
             )
 
         try:
             site = int(payload.get("site", -1))
         except (TypeError, ValueError):
-            return Proposal(Validity.BAD_SITE, rationale=rationale, provider=completion.provider)
+            return Proposal(
+                Validity.BAD_SITE,
+                rationale=rationale,
+                provider=completion.provider,
+                named_type=kind_name,
+            )
 
         if not 0 <= site < len(program):
-            return Proposal(Validity.BAD_SITE, rationale=rationale, provider=completion.provider)
+            return Proposal(
+                Validity.BAD_SITE,
+                rationale=rationale,
+                provider=completion.provider,
+                named_type=kind_name,
+                named_site=site,
+            )
 
         return Proposal(
             Validity.VALID,
@@ -148,4 +197,6 @@ class LlmSpecialist:
             ),
             rationale=rationale,
             provider=completion.provider,
+            named_type=kind_name,
+            named_site=site,
         )

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .datagen import GeneratedProgram, generate
 from .ir import source_to_tac
+from .llm.provider import ProviderExhaustedError
 from .orchestrator import RunConfig, optimize
 from .search import METHOD_NAMES
 
@@ -222,6 +223,11 @@ def run_experiment(
                 row = _row_for(program, method, config)
                 if not row["output_match"]:
                     progress.mismatches += 1
+            except ProviderExhaustedError:
+                # Not a bad cell. Every remaining cell would fail the same way,
+                # and writing them as errors would bury the finished rows that
+                # --resume needs. Stop, keeping what completed.
+                raise
             except Exception as error:  # one bad cell must not lose the batch
                 row = _failure_row(program, method, error)
                 row["error"] = f"{row['error']} | {traceback.format_exc(limit=1)}"[:400]

@@ -25,6 +25,15 @@ DEFAULT_TIMEOUT = 30.0
 DEFAULT_CACHE_DIR = ".llm_cache"
 
 
+class ProviderExhaustedError(RuntimeError):
+    """Every permitted provider failed and falling back was not allowed.
+
+    Raised rather than degraded so a batch stops instead of silently finishing on
+    a different model. A dataset where some rows came from one model and the rest
+    from another cannot be reported as one method.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class Completion:
     text: str
@@ -122,11 +131,21 @@ class GroqProvider(Provider):
 class ProviderChain:
     """Tries each provider in turn, caching whatever answers."""
 
-    def __init__(self, providers: list[Provider], cache_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        providers: list[Provider],
+        cache_dir: str | Path | None = None,
+        *,
+        allow_fallback: bool = True,
+    ) -> None:
         self.providers = [p for p in providers if p.available]
         self.cache_dir = Path(cache_dir or DEFAULT_CACHE_DIR)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.failures: dict[str, int] = {}
+        #: With fallback off only the first provider is used, and its failure
+        #: stops the run. Cached answers are still served, so resuming skips
+        #: everything already done.
+        self.allow_fallback = allow_fallback
 
     def _cache_path(self, prompt: str) -> Path:
         digest = hashlib.sha256(prompt.encode()).hexdigest()[:32]
@@ -138,15 +157,24 @@ class ProviderChain:
             stored = json.loads(path.read_text(encoding="utf-8"))
             return Completion(text=stored["text"], provider=stored["provider"], cached=True)
 
-        for provider in self.providers:
+        permitted = self.providers if self.allow_fallback else self.providers[:1]
+
+        for provider in permitted:
             try:
                 text = provider.complete(prompt)
-            except Exception:  # any failure just moves to the next provider
+            except Exception as error:  # any failure just moves to the next provider
                 self.failures[provider.name] = self.failures.get(provider.name, 0) + 1
+                if not self.allow_fallback:
+                    raise ProviderExhaustedError(
+                        f"{provider.name} failed and fallback is off: {error}"
+                    ) from error
                 continue
 
             path.write_text(json.dumps({"text": text, "provider": provider.name}), encoding="utf-8")
             return Completion(text=text, provider=provider.name)
+
+        if not self.allow_fallback:
+            raise ProviderExhaustedError("no provider available and fallback is off")
 
         # Deliberately not cached. The stub is what answers when every real
         # provider is unavailable, not an answer in its own right, and storing it
@@ -156,13 +184,21 @@ class ProviderChain:
         return Completion(text=stub.complete(prompt), provider=stub.name)
 
 
-def build_chain(cache_dir: str | Path | None = None) -> ProviderChain:
+def build_chain(
+    cache_dir: str | Path | None = None, *, allow_fallback: bool | None = None
+) -> ProviderChain:
     """Gemini, then Groq, then the stub, using whatever keys are in the environment."""
     providers: list[Provider] = []
 
     # Order is set by AUTOOPT_LLM_PROVIDER. Gemini's free tier has a daily cap
     # that a full corpus run exhausts, so whichever has quota should lead.
     preferred = os.environ.get("AUTOOPT_LLM_PROVIDER", "gemini").strip().lower()
+
+    # AUTOOPT_LLM_FALLBACK=0 keeps a batch on one model: the run stops when that
+    # model's quota is gone rather than finishing on another one, because a
+    # dataset built from two models cannot be reported as one method.
+    if allow_fallback is None:
+        allow_fallback = os.environ.get("AUTOOPT_LLM_FALLBACK", "1").strip() not in ("0", "false")
 
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     groq_key = os.environ.get("GROQ_API_KEY", "")
@@ -188,4 +224,8 @@ def build_chain(cache_dir: str | Path | None = None) -> ProviderChain:
     # provider that always succeeds, so it wins inside the loop and its answer
     # gets cached, permanently recording the program as having nothing to do.
     # ProviderChain falls through to it only when every real provider failed.
-    return ProviderChain(providers, cache_dir or os.environ.get("AUTOOPT_LLM_CACHE_DIR"))
+    return ProviderChain(
+        providers,
+        cache_dir or os.environ.get("AUTOOPT_LLM_CACHE_DIR"),
+        allow_fallback=allow_fallback,
+    )
