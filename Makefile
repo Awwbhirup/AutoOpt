@@ -1,4 +1,4 @@
-.PHONY: help install lint fmt type test serve app corpus experiment budgeted merge mutants analyze figures report notebook reproduce clean
+.PHONY: help install lint fmt type test serve app llm-pass llm-status corpus experiment budgeted merge mutants analyze figures report notebook reproduce clean
 
 help:
 	@echo "install     install the engine with dev dependencies"
@@ -8,6 +8,8 @@ help:
 	@echo "test        pytest (excludes slow + llm markers)"
 	@echo "serve       run the compute service on :8000"
 	@echo "app         run the application tier on :3000"
+	@echo "llm-pass    keep the llm pass going until the corpus is complete"
+	@echo "llm-status  how far the llm pass has got"
 	@echo "corpus      generate the 500-program dataset"
 	@echo "experiment  run every method x category cell -> master CSV"
 	@echo "budgeted    the same grid at three search budgets, for the statistics"
@@ -50,6 +52,13 @@ serve:
 
 app:
 	cd web && npm run dev
+
+# Survives the daily quota running out. --install makes it start at logon.
+llm-pass:
+	python scripts/llm_pass.py
+
+llm-status:
+	python scripts/llm_pass.py --status
 
 corpus:
 	cd engine && python -m autoopt.cli corpus --out ../data/corpus
