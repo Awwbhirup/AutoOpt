@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import matplotlib.pyplot as plt
 
-from .metrics import Metric, MetricsTable, by_category, by_method, compute
+from .metrics import Metric, MetricsTable, by_category, by_method, compute, llm_validity_rate
 from .plots import FIGURES
 from .statistical import STATISTICAL_FIGURES
 from .theme import DARK, LIGHT, THEMES, Theme, oklch, rc_params
@@ -25,6 +25,7 @@ __all__ = [
     "by_category",
     "by_method",
     "compute",
+    "llm_validity_rate",
     "oklch",
     "rc_params",
     "render_all",

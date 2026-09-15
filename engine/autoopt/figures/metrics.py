@@ -16,6 +16,7 @@ program under the thorough profile, and a mismatch is recorded in the row.
 
 from __future__ import annotations
 
+import json
 import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -48,8 +49,38 @@ def _mean(values: Sequence[float]) -> float:
     return statistics.fmean(values) if values else 0.0
 
 
+def llm_validity_rate(rows: Rows) -> float | None:
+    """Validity pooled over every call in the dataset, or None if no LLM ran.
+
+    Pooled rather than averaged over programs. A program that took three calls
+    and one that took twelve are not equally strong evidence about the model,
+    and averaging their rates would treat them as though they were.
+
+    Declining is excluded here for the same reason it is excluded per run:
+    "nothing left to do" is a correct answer, not a failed one.
+    """
+    valid = 0
+    considered = 0
+    seen = False
+    for row in rows:
+        if row.get("error") or not row.get("llm_calls"):
+            continue
+        seen = True
+        breakdown = json.loads(row.get("llm_by_validity") or "{}")
+        valid += breakdown.get("valid", 0)
+        considered += int(row["llm_calls"]) - breakdown.get("declined", 0)
+    if not seen:
+        return None
+    return valid / considered if considered else 0.0
+
+
 def compute(rows: Rows, llm_validity: float | None = None) -> MetricsTable:
     usable = [row for row in rows if not row.get("error")]
+    if llm_validity is None:
+        # Read it off the rows. It used to arrive only as an argument, and
+        # nothing ever passed one, so the table said "not run" over a dataset
+        # that had the number in every LLM row.
+        llm_validity = llm_validity_rate(usable)
     failures = len(rows) - len(usable)
 
     proposals = sum(int(row["proposals"]) for row in usable)

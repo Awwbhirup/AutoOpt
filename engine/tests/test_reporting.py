@@ -8,7 +8,17 @@ import pytest
 from autoopt.datagen import Category
 from autoopt.events import Event
 from autoopt.experiment import FIELDNAMES, iter_rows, run_experiment, summarise
-from autoopt.figures import DARK, LIGHT, THEMES, by_category, by_method, compute, oklch, render_all
+from autoopt.figures import (
+    DARK,
+    LIGHT,
+    THEMES,
+    by_category,
+    by_method,
+    compute,
+    llm_validity_rate,
+    oklch,
+    render_all,
+)
 from autoopt.ir import source_to_tac
 from autoopt.orchestrator import RunConfig, optimize
 from autoopt.report import decision_log, summary_page
@@ -101,6 +111,41 @@ def test_false_positive_rate_is_zero(rows: list[dict[str, str]]) -> None:
 def test_llm_metric_says_not_run_without_data(rows: list[dict[str, str]]) -> None:
     assert compute(rows).metrics[4].display == "not run"
     assert compute(rows, llm_validity=0.8).metrics[4].display == "80.0%"
+
+
+def test_llm_metric_comes_off_the_rows() -> None:
+    """The rate is in the rows, so the table has to read it rather than be told.
+
+    Pooled over calls, not averaged over programs: the two rows below have the
+    same per-program rate only by coincidence of their sizes, and the pooled
+    answer is 8 valid out of 10 considered once the declined call is dropped.
+    """
+    rows = [
+        {"llm_calls": "4", "llm_by_validity": '{"valid":3,"not_available":1}', **_SHELL},
+        {
+            "llm_calls": "7",
+            "llm_by_validity": '{"valid":5,"not_available":1,"declined":1}',
+            **_SHELL,
+        },
+    ]
+    assert llm_validity_rate(rows) == pytest.approx(8 / 10)
+    assert compute(rows).metrics[4].display == "80.0%"
+
+
+#: The columns compute() reads that are not about the LLM. Zeroed, so the
+#: validity assertions above are not entangled with the other five metrics.
+_SHELL = {
+    "error": "",
+    "proposals": "0",
+    "refuted": "0",
+    "cost_improving": "0",
+    "cost_reduction": "0",
+    "accepted": "0",
+    "output_match": "1",
+    "program_id": "p",
+    "method": "llm",
+    "category": "mixed",
+}
 
 
 def test_breakdowns_cover_every_group(rows: list[dict[str, str]]) -> None:
