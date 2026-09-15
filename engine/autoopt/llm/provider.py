@@ -162,6 +162,16 @@ class Provider(ABC):
     def available(self) -> bool:
         return True
 
+    @property
+    def prompt_variant(self) -> str:
+        """How this provider alters the prompt before sending it.
+
+        Part of the cache key. A provider that appends a control token is
+        asking a different question, and an answer given without it must not
+        be served in its place.
+        """
+        return ""
+
 
 class StubProvider(Provider):
     """Deterministic no-network provider.
@@ -336,6 +346,10 @@ class GroqProvider(Provider):
         except (KeyError, ValueError):
             return None
 
+    @property
+    def prompt_variant(self) -> str:
+        return self.NO_THINK if "qwen" in self.model.lower() else ""
+
     def _sent(self, prompt: str) -> str:
         """The prompt as this model needs to receive it.
 
@@ -343,9 +357,8 @@ class GroqProvider(Provider):
         of one model, not of the task. Another model would see a stray token,
         and answers are cached per model, so the two cannot mix.
         """
-        if "qwen" not in self.model.lower():
-            return prompt
-        return f"{prompt}\n{self.NO_THINK}"
+        variant = self.prompt_variant
+        return f"{prompt}\n{variant}" if variant else prompt
 
     def complete(self, prompt: str) -> str:
         self._wait_for_slot()
@@ -408,13 +421,25 @@ class ProviderChain:
         #: Part of the cache key, so two models do not share answers. Without it
         #: a second model is served whatever the first one said, and a comparison
         #: between them comes out identical for a reason nothing would report.
-        self.namespace = namespace or (
-            getattr(self.providers[0], "model", "") if self.providers else ""
-        )
+        self.namespace = namespace or self._default_namespace()
         #: With fallback off only the first provider is used, and its failure
         #: stops the run. Cached answers are still served, so resuming skips
         #: everything already done.
         self.allow_fallback = allow_fallback
+
+    def _default_namespace(self) -> str:
+        """Model and prompt variant together.
+
+        The model alone is not enough. The same model asked with a control
+        token appended is a different treatment, and keying only on the name
+        would serve the old answers to the new configuration without saying so.
+        """
+        if not self.providers:
+            return ""
+        first = self.providers[0]
+        model = getattr(first, "model", "")
+        variant = first.prompt_variant
+        return f"{model}{variant}"
 
     def _cache_path(self, prompt: str) -> Path:
         keyed = f"{self.namespace}\0{prompt}"

@@ -541,3 +541,42 @@ def test_other_models_are_not_given_the_token() -> None:
     """It is one model's control token, not part of the task."""
     provider = GroqProvider(api_key="k", model="llama-3.3-70b-versatile")
     assert provider._sent("listing") == "listing"
+
+
+class VariantProvider(Provider):
+    """Same model name, different prompt variant. The case that matters."""
+
+    name = "variant"
+
+    def __init__(self, variant: str) -> None:
+        self.model = "same-model"
+        self._variant = variant
+
+    @property
+    def prompt_variant(self) -> str:
+        return self._variant
+
+    def complete(self, prompt: str) -> str:
+        del prompt
+        return "{}"
+
+
+def test_cache_keeps_prompt_variants_apart(tmp_path: Path) -> None:
+    """An answer given without the control token is a different answer.
+
+    The token is appended by the provider, after the cache key is built from
+    the prompt, so keying on the model name alone would serve answers from one
+    configuration to another and report them as one treatment. Same model here
+    on both sides, which is exactly the collision the model name cannot catch.
+    """
+    plain = ProviderChain([VariantProvider("")], cache_dir=tmp_path)
+    controlled = ProviderChain([VariantProvider("/no_think")], cache_dir=tmp_path)
+
+    assert plain.namespace != controlled.namespace
+    assert plain._cache_path("listing") != controlled._cache_path("listing")
+
+
+def test_the_sent_prompt_matches_the_declared_variant() -> None:
+    """One source of truth, so the cache key cannot drift from what was sent."""
+    provider = GroqProvider(api_key="k", model="qwen/qwen3.8-27b")
+    assert provider._sent("listing").endswith(provider.prompt_variant)
