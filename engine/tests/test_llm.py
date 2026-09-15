@@ -23,6 +23,7 @@ from autoopt.llm.provider import (
     Provider,
     ProviderChain,
     ProviderExhaustedError,
+    _first_choice,
     raise_with_reason,
 )
 from autoopt.llm.specialist import LlmSpecialist, Validity
@@ -580,3 +581,18 @@ def test_the_sent_prompt_matches_the_declared_variant() -> None:
     """One source of truth, so the cache key cannot drift from what was sent."""
     provider = GroqProvider(api_key="k", model="qwen/qwen3.8-27b")
     assert provider._sent("listing").endswith(provider.prompt_variant)
+
+
+def test_a_body_that_is_not_a_completion_is_named_as_such(tmp_path: Path) -> None:
+    """A 200 in the wrong shape should say so, not raise a KeyError from inside."""
+
+    class WrongShapeProvider(Provider):
+        name = "wrong"
+
+        def complete(self, prompt: str) -> str:
+            del prompt
+            return _first_choice({"unexpected": "shape"})
+
+    chain = ProviderChain([WrongShapeProvider()], cache_dir=tmp_path, allow_fallback=False)
+    with pytest.raises(ProviderExhaustedError, match="no choices"):
+        chain.complete("anything")

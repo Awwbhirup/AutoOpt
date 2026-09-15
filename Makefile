@@ -1,4 +1,4 @@
-.PHONY: help install lint fmt type test corpus experiment budgeted merge mutants analyze figures report notebook reproduce clean
+.PHONY: help install lint fmt type test serve corpus experiment budgeted merge mutants analyze figures report notebook reproduce clean
 
 help:
 	@echo "install     install the engine with dev dependencies"
@@ -6,6 +6,7 @@ help:
 	@echo "fmt         ruff format"
 	@echo "type        mypy --strict"
 	@echo "test        pytest (excludes slow + llm markers)"
+	@echo "serve       run the compute service on :8000"
 	@echo "corpus      generate the 500-program dataset"
 	@echo "experiment  run every method x category cell -> master CSV"
 	@echo "budgeted    the same grid at three search budgets, for the statistics"
@@ -19,18 +20,28 @@ help:
 
 install:
 	cd engine && pip install -e ".[dev,notebook]"
+	cd service && pip install -e ".[dev]"
 
 lint:
 	cd engine && ruff check .
+	cd service && ruff check .
 
 fmt:
 	cd engine && ruff format .
+	cd service && ruff format .
 
 type:
 	cd engine && mypy autoopt
+	cd service && mypy autoopt_service
 
 test:
 	cd engine && pytest -m "not slow and not llm"
+	cd service && pytest
+
+# Reload on edit. The engine is imported as a library, so a change there is
+# picked up the same way a change here is.
+serve:
+	cd service && uvicorn autoopt_service.app:app --reload --port 8000
 
 corpus:
 	cd engine && python -m autoopt.cli corpus --out ../data/corpus

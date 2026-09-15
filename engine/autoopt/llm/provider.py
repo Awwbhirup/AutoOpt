@@ -118,6 +118,28 @@ def raise_with_reason(response: httpx.Response) -> None:
         ) from None
 
 
+class MalformedResponseError(RuntimeError):
+    """The provider answered with something that is not a completion.
+
+    Its own errors are handled above this; reaching here means a 200 whose body
+    is not the shape the API documents, which is worth saying plainly rather
+    than surfacing as a KeyError from three levels down.
+    """
+
+
+def _first_choice(payload: dict[str, object]) -> str:
+    """The message text out of an OpenAI-shaped completion body."""
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise MalformedResponseError("response carried no choices")
+    first = choices[0]
+    message = first.get("message") if isinstance(first, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if content is None:
+        raise MalformedResponseError("response carried no message content")
+    return str(content)
+
+
 def _json_validate_failed(response: httpx.Response) -> bool:
     """Is this 400 the provider saying the generation ran past the cap?
 
@@ -391,7 +413,7 @@ class GroqProvider(Provider):
         if response.status_code == 400 and _json_validate_failed(response):
             raise GenerationTooLongError(self.name)
         raise_with_reason(response)
-        return str(payload["choices"][0]["message"]["content"])
+        return _first_choice(payload)
 
     @staticmethod
     def _payload(response: httpx.Response) -> dict[str, object]:

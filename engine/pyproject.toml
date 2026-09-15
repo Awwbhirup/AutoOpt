@@ -46,6 +46,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["autoopt*"]
 
+# The package is checked under mypy strict, but without this marker that work is
+# invisible to anything importing it: the service tier would see Any everywhere.
+[tool.setuptools.package-data]
+autoopt = ["py.typed"]
+
 # -----------------------------------------------------------------------------
 
 [tool.ruff]

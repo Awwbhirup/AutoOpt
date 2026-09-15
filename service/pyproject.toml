@@ -1,0 +1,51 @@
+[project]
+name = "autoopt-service"
+version = "0.1.0"
+description = "Stateless HTTP surface over the AutoOpt engine."
+requires-python = ">=3.12"
+dependencies = [
+    "autoopt",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "httpx>=0.27",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["autoopt_service*"]
+
+# -----------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+# The engine is installed editable, and mypy cannot follow the import hook that
+# makes that work. Pointing at the source is what lets its types reach here.
+mypy_path = "../engine"
+
+# Reached through the engine rather than imported here, but checking the engine
+# means checking what it imports, and these ship no stubs.
+[[tool.mypy.overrides]]
+module = ["z3.*", "scipy.*", "statsmodels.*", "sklearn.*", "matplotlib.*", "seaborn.*", "plotly.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
