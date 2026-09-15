@@ -12,6 +12,10 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Migrations have to bypass the connection pooler. Run through the pooled
+  // endpoint they fail partway with an advisory-lock error, which reads like a
+  // broken migration rather than the wrong URL.
+  directUrl = env("DIRECT_URL")
 }
 
 // --- identity ---------------------------------------------------------------
