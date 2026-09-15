@@ -14,7 +14,12 @@ import pytest
 
 from autoopt.cost import CostModel
 from autoopt.ir import TacProgram, source_to_tac
-from autoopt.llm.provider import Provider, ProviderChain, ProviderExhaustedError
+from autoopt.llm.provider import (
+    GenerationTooLongError,
+    Provider,
+    ProviderChain,
+    ProviderExhaustedError,
+)
 from autoopt.llm.specialist import LlmSpecialist, Validity
 from autoopt.llm.strategy import LlmStrategy
 from autoopt.search.base import Environment, SearchStats
@@ -53,6 +58,20 @@ class FailingProvider(Provider):
     def complete(self, prompt: str) -> str:
         del prompt
         raise RuntimeError("quota exhausted")
+
+
+class OverlongProvider(Provider):
+    """Reasons past its output budget and never closes the JSON object."""
+
+    name = "overlong"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, prompt: str) -> str:
+        del prompt
+        self.calls += 1
+        raise GenerationTooLongError(self.name)
 
 
 def reply(kind: str, site: int) -> str:
@@ -371,3 +390,40 @@ def test_every_registered_arm_builds(tmp_path: Path) -> None:
         assert arm in METHOD_NAMES
         strategy = build_strategy(arm)
         assert strategy.name == arm, "the arm name has to survive onto the strategy"
+
+
+# --- running past the output cap ---------------------------------------------------
+
+
+def test_overlong_generation_does_not_stop_the_run(tmp_path: Path) -> None:
+    """One program the model cannot answer briefly must not end the batch.
+
+    A truncated generation used to reach the batch runner as provider
+    exhaustion, which stops everything. It is a fact about the model on one
+    program, so it belongs in the validity breakdown instead.
+    """
+    provider = OverlongProvider()
+    specialist = LlmSpecialist(ProviderChain([provider], cache_dir=tmp_path))
+    proposal = specialist.propose(source_to_tac(SOURCE))
+
+    assert proposal.validity is Validity.OVERLONG
+    assert proposal.opportunity is None
+    assert specialist.stats.by_validity == {"overlong": 1}
+    assert specialist.stats.validity_rate == 0.0
+
+
+def test_overlong_is_not_retried(tmp_path: Path) -> None:
+    """Deterministic for a given prompt, so a retry only spends quota."""
+    provider = OverlongProvider()
+    specialist = LlmSpecialist(ProviderChain([provider], cache_dir=tmp_path))
+    specialist.propose(source_to_tac(SOURCE))
+
+    assert provider.calls == 1
+
+
+def test_overlong_tells_the_model_to_be_brief(tmp_path: Path) -> None:
+    provider = OverlongProvider()
+    specialist = LlmSpecialist(ProviderChain([provider], cache_dir=tmp_path))
+    proposal = specialist.propose(source_to_tac(SOURCE))
+
+    assert "fewer words" in proposal.as_ruled_out()

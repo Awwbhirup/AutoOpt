@@ -25,10 +25,17 @@ import httpx
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_CACHE_DIR = ".llm_cache"
 
-#: The reply is one small JSON object, well under a hundred tokens. Providers
-#: reserve this whole number against a per-minute budget whether it is used or
-#: not, so a generous ceiling directly cuts how many calls fit in a minute.
-MAX_OUTPUT_TOKENS = 128
+#: The answer is one small JSON object, but the model reasons out loud before it
+#: and that preamble is charged as output too. Measured across the corpus: most
+#: categories finish in about 55 tokens, loops in 972, because a loop is where
+#: there is something to think about. A cap below the preamble does not truncate
+#: the reply, it kills the request outright, since the object never closes and
+#: the provider rejects the whole generation as invalid JSON.
+#:
+#: Providers reserve this whole number against a per-minute budget whether it is
+#: used or not, so it also sets how many calls fit in a minute. Hence a ceiling
+#: with headroom over the worst case observed rather than a generous one.
+MAX_OUTPUT_TOKENS = 1536
 
 
 #: Attempts per provider before giving up on a prompt, and the pause before each
@@ -46,6 +53,22 @@ BACKOFF_SECONDS = (5.0, 20.0, 40.0)
 RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 
 
+class GenerationTooLongError(RuntimeError):
+    """The model never closed its JSON object inside the output budget.
+
+    Deterministic for a given prompt, so there is nothing to retry and nothing
+    to fall back to: another provider asked the same question would be a
+    different model answering, which is the one thing the chain must not do
+    silently. It is also not a reason to stop the batch. The model failing to
+    deliver a usable answer on one program is a result about the model, so it
+    is reported as an invalid proposal and the run carries on.
+    """
+
+    def __init__(self, provider: str) -> None:
+        super().__init__(f"{provider} hit the output cap before closing its JSON")
+        self.provider = provider
+
+
 class ProviderExhaustedError(RuntimeError):
     """Every permitted provider failed and falling back was not allowed.
 
@@ -59,6 +82,18 @@ def _is_transient(error: Exception) -> bool:
     if isinstance(error, httpx.HTTPStatusError):
         return error.response.status_code in RETRYABLE_STATUS
     return isinstance(error, httpx.TimeoutException | httpx.TransportError)
+
+
+def _json_validate_failed(response: httpx.Response) -> bool:
+    """Is this 400 the provider saying the generation ran past the cap?
+
+    Worth telling apart from every other 400: a malformed request is a bug to
+    fix, this is a measurement.
+    """
+    try:
+        return str(response.json().get("error", {}).get("code", "")) == "json_validate_failed"
+    except ValueError:
+        return False
 
 
 def redact(text: str, secrets: list[str]) -> str:
@@ -175,13 +210,16 @@ class GroqProvider(Provider):
     name = "groq"
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
-    #: Floor between calls, chosen to sit near 60% of the per-minute token
-    #: budget rather than at its edge, so an unusually long program does not
-    #: tip the window over.
-    MIN_INTERVAL = 6.0
+    #: Floor between calls. The per-minute budget is 8000 tokens and a call
+    #: reserves its prompt plus MAX_OUTPUT_TOKENS, near 1900, so four a minute
+    #: is the ceiling and this sits just under it. The daily request cap binds
+    #: long before this does, so there is nothing to gain by crowding the edge.
+    MIN_INTERVAL = 15.0
     #: Below this many tokens left in the window, wait it out rather than be
-    #: refused and burn a retry.
-    LOW_WATER_TOKENS = 1500
+    #: refused and burn a retry. Has to exceed one call's own reservation,
+    #: prompt plus MAX_OUTPUT_TOKENS, or the check passes on a window that
+    #: cannot actually fit the call it is about to allow.
+    LOW_WATER_TOKENS = 2500
 
     def __init__(self, api_key: str, model: str = "qwen/qwen3.8-27b") -> None:
         self.api_key = api_key
@@ -231,6 +269,8 @@ class GroqProvider(Provider):
         # Before raise_for_status: a refusal carries the budget headers too, and
         # that is exactly when knowing how long to wait matters most.
         self._note_budget(response)
+        if response.status_code == 400 and _json_validate_failed(response):
+            raise GenerationTooLongError(self.name)
         response.raise_for_status()
         payload = response.json()
         return str(payload["choices"][0]["message"]["content"])
@@ -296,12 +336,13 @@ class ProviderChain:
         for provider in permitted:
             try:
                 text = self._with_retries(provider, prompt)
+            except GenerationTooLongError:
+                raise
             except Exception as error:  # any failure just moves to the next provider
                 self.failures[provider.name] = self.failures.get(provider.name, 0) + 1
                 if not self.allow_fallback:
                     raise ProviderExhaustedError(
-                        f"{provider.name} failed after {MAX_ATTEMPTS} attempts and "
-                        f"fallback is off: {self._clean(error)}"
+                        f"{provider.name} failed and fallback is off: {self._clean(error)}"
                     ) from None
                 continue
 

@@ -26,7 +26,7 @@ from enum import StrEnum
 from ..events import OptimizationType
 from ..ir import TacProgram, build_cfg
 from ..rules import Opportunity, analyse
-from .provider import Completion, ProviderChain, build_chain
+from .provider import Completion, GenerationTooLongError, ProviderChain, build_chain
 
 CATALOG = [kind.value for kind in OptimizationType]
 
@@ -64,6 +64,11 @@ class Validity(StrEnum):
     #: the one the metric is supposed to be about. Emitting JSON is easy; knowing
     #: where in the code a transformation is legal is the actual task.
     NOT_AVAILABLE = "not_available"
+    #: The model reasoned past its output budget and never closed the object.
+    #: Counted against validity rather than dropped: no usable proposal came
+    #: back, and that is the same outcome as an unparseable one from the
+    #: caller's side. Kept separate so the breakdown says which it was.
+    OVERLONG = "overlong"
 
 
 @dataclass
@@ -110,6 +115,8 @@ class Proposal:
 
     def as_ruled_out(self) -> str:
         """One line telling the model what not to repeat, and why."""
+        if self.validity is Validity.OVERLONG:
+            return "your previous reply ran too long to finish; answer in fewer words"
         if self.validity is Validity.UNPARSEABLE:
             return "your previous reply was not valid JSON; reply with JSON only"
         if self.validity is Validity.UNKNOWN_TYPE:
@@ -146,8 +153,15 @@ class LlmSpecialist:
             ruled_out=block,
         )
 
-        completion = self.chain.complete(prompt)
-        proposal = self._confirm(self._parse(completion, program), program)
+        try:
+            completion = self.chain.complete(prompt)
+        except GenerationTooLongError as error:
+            # A result, not an outage. Recorded and returned like any other
+            # unusable answer so one stubborn program cannot end the batch.
+            completion = Completion(text="", provider=error.provider)
+            proposal = Proposal(validity=Validity.OVERLONG, provider=error.provider)
+        else:
+            proposal = self._confirm(self._parse(completion, program), program)
         self.stats.record(proposal.validity, completion)
         return proposal
 
