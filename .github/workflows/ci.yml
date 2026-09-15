@@ -36,3 +36,120 @@ jobs:
       # calls in CI. Those run locally via `make experiment`.
       - name: Test
         run: pytest -m "not slow and not llm"
+
+  service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # The engine is a path dependency, so it has to be present and installed
+      # first. Editable, so mypy can follow it to the source.
+      - name: Install
+        run: |
+          pip install -e ../engine
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format check
+        run: ruff format --check .
+
+      - name: Type check
+        run: mypy autoopt_service
+
+      - name: Test
+        run: pytest
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Needs the schema only, not a database, so it runs before anything that
+      # imports the generated types.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      # The tests that need the compute service skip themselves when it is not
+      # reachable, and say so. They run in the `contract` job below, which is
+      # the one that would catch the two tiers drifting apart.
+      - name: Test
+        run: npm test
+
+  # The guard against the application tier and the engine disagreeing about the
+  # event contract. The web tier restates the engine's enums, and this is what
+  # makes that restatement safe: the service publishes its vocabulary and the
+  # web suite compares the two.
+  contract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install the engine and service
+        run: |
+          pip install -e ./engine
+          pip install -e ./service
+
+      - name: Install the web tier
+        working-directory: web
+        run: |
+          npm ci
+          npx prisma generate
+
+      - name: Start the compute service
+        run: |
+          uvicorn autoopt_service.app:app --host 127.0.0.1 --port 8000 --log-level warning &
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health
+
+      # A drift check that skipped itself would report green while checking
+      # nothing, so the service is confirmed up before this runs.
+      - name: Check the contract
+        working-directory: web
+        env:
+          AUTOOPT_SERVICE_URL: http://127.0.0.1:8000
+        run: npm test
