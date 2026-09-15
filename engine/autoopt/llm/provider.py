@@ -37,6 +37,11 @@ DEFAULT_CACHE_DIR = ".llm_cache"
 #: with headroom over the worst case observed rather than a generous one.
 MAX_OUTPUT_TOKENS = 1536
 
+#: Stand-in prompt size for pacing the very first call, before any response has
+#: reported a real one. Near the middle of the corpus rather than generous: the
+#: first call's own reply corrects it.
+ASSUMED_PROMPT_TOKENS = 400
+
 
 #: Attempts per provider before giving up on a prompt, and the pause before each
 #: retry. A 503 or a per-minute rate limit is a blip; stopping a five hundred
@@ -82,6 +87,32 @@ def _is_transient(error: Exception) -> bool:
     if isinstance(error, httpx.HTTPStatusError):
         return error.response.status_code in RETRYABLE_STATUS
     return isinstance(error, httpx.TimeoutException | httpx.TransportError)
+
+
+def raise_with_reason(response: httpx.Response) -> None:
+    """raise_for_status, but keeping what the provider actually said.
+
+    The default message is the status line and the URL, so a refusal arrives
+    with its reason stripped off. That cost a diagnosis once already: a 429
+    that was the per-minute token window looked identical to one that was the
+    daily cap, and the two want opposite responses.
+    """
+    if not response.is_error:
+        return
+    detail = ""
+    try:
+        body = response.json()
+        detail = str(body.get("error", {}).get("message", "")).strip()
+    except ValueError:
+        detail = response.text[:200].strip()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as error:
+        if not detail:
+            raise
+        raise httpx.HTTPStatusError(
+            f"{error}: {detail}", request=error.request, response=error.response
+        ) from None
 
 
 def _json_validate_failed(response: httpx.Response) -> bool:
@@ -173,7 +204,7 @@ class GeminiProvider(Provider):
             },
             timeout=DEFAULT_TIMEOUT,
         )
-        response.raise_for_status()
+        raise_with_reason(response)
         payload = response.json()
         return str(payload["candidates"][0]["content"]["parts"][0]["text"])
 
@@ -210,21 +241,22 @@ class GroqProvider(Provider):
     name = "groq"
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
-    #: Floor between calls. The per-minute budget is 8000 tokens and a call
-    #: reserves its prompt plus MAX_OUTPUT_TOKENS, near 1900, so four a minute
-    #: is the ceiling and this sits just under it. The daily request cap binds
-    #: long before this does, so there is nothing to gain by crowding the edge.
-    MIN_INTERVAL = 15.0
-    #: Below this many tokens left in the window, wait it out rather than be
-    #: refused and burn a retry. Has to exceed one call's own reservation,
-    #: prompt plus MAX_OUTPUT_TOKENS, or the check passes on a window that
-    #: cannot actually fit the call it is about to allow.
-    LOW_WATER_TOKENS = 2500
+    #: Floor between calls, whatever the arithmetic below works out to.
+    MIN_INTERVAL = 6.0
+    #: Assumed per-minute token budget until a response tells us the real one.
+    DEFAULT_TOKEN_LIMIT = 8000
+    #: Spend this share of the refill rate rather than all of it. The budget is
+    #: a bucket shared with anything else on the key, and a call that arrives a
+    #: moment early is refused outright rather than queued.
+    SAFETY = 0.85
 
     def __init__(self, api_key: str, model: str = "qwen/qwen3.8-27b") -> None:
         self.api_key = api_key
         self.model = model
         self._next_allowed = 0.0
+        #: Last prompt size seen, used to pace the next call when a response
+        #: carries no usage of its own, as a refusal does.
+        self._last_prompt_tokens = ASSUMED_PROMPT_TOKENS
 
     @property
     def available(self) -> bool:
@@ -235,18 +267,50 @@ class GroqProvider(Provider):
         if pause > 0:
             time.sleep(pause)
 
-    def _note_budget(self, response: httpx.Response) -> None:
-        """Pace from what the provider says is left, not from a guess."""
-        delay = self.MIN_INTERVAL
-        remaining = response.headers.get("x-ratelimit-remaining-tokens")
-        if remaining is not None:
-            try:
-                if int(remaining) < self.LOW_WATER_TOKENS:
-                    reset = parse_duration(response.headers.get("x-ratelimit-reset-tokens", ""))
-                    delay = max(delay, reset + 1.0)
-            except ValueError:
-                pass
+    def _note_budget(self, response: httpx.Response, prompt_tokens: int | None = None) -> None:
+        """Wait long enough for the window to refill what this call spent.
+
+        The budget is a bucket that refills continuously, not an allowance that
+        resets on a clock. Reading the remaining count straight after a response
+        therefore always looks healthy, because the refill has already started,
+        and pacing off that reading is how a fixed interval ended up being
+        trusted for something it could not know.
+
+        So the wait is computed instead: a call reserves its prompt plus the
+        whole output ceiling whether or not it uses it, and the window refills
+        at limit/60 per second, so the time owed is one divided by the other.
+        The prompt length comes from the response when the provider reports it,
+        since it grows with the program being optimized.
+        """
+        limit = self._header_int(response, "x-ratelimit-limit-tokens") or self.DEFAULT_TOKEN_LIMIT
+        refill_per_second = limit / 60.0
+        if prompt_tokens is None:
+            prompt_tokens = self._reported_prompt_tokens(response)
+        spent = (prompt_tokens or self._last_prompt_tokens) + MAX_OUTPUT_TOKENS
+        delay = max(self.MIN_INTERVAL, spent / refill_per_second / self.SAFETY)
+
+        if response.status_code == 429:
+            # Already over. The provider says how long the window needs, and
+            # that beats guessing: too short and the retry is spent for nothing.
+            reset = parse_duration(response.headers.get("x-ratelimit-reset-tokens", ""))
+            delay = max(delay, reset + 1.0)
+
         self._next_allowed = time.monotonic() + delay
+
+    @classmethod
+    def _reported_prompt_tokens(cls, response: httpx.Response) -> int | None:
+        usage = cls._payload(response).get("usage")
+        if not isinstance(usage, dict):
+            return None
+        reported = usage.get("prompt_tokens")
+        return int(reported) if reported else None
+
+    @staticmethod
+    def _header_int(response: httpx.Response, name: str) -> int | None:
+        try:
+            return int(response.headers[name])
+        except (KeyError, ValueError):
+            return None
 
     def complete(self, prompt: str) -> str:
         self._wait_for_slot()
@@ -268,12 +332,25 @@ class GroqProvider(Provider):
         )
         # Before raise_for_status: a refusal carries the budget headers too, and
         # that is exactly when knowing how long to wait matters most.
-        self._note_budget(response)
+        payload = self._payload(response)
+        usage = payload.get("usage") if isinstance(payload, dict) else None
+        prompt_tokens = usage.get("prompt_tokens") if isinstance(usage, dict) else None
+        if prompt_tokens:
+            self._last_prompt_tokens = int(prompt_tokens)
+        self._note_budget(response, prompt_tokens)
+
         if response.status_code == 400 and _json_validate_failed(response):
             raise GenerationTooLongError(self.name)
-        response.raise_for_status()
-        payload = response.json()
+        raise_with_reason(response)
         return str(payload["choices"][0]["message"]["content"])
+
+    @staticmethod
+    def _payload(response: httpx.Response) -> dict[str, object]:
+        try:
+            body = response.json()
+        except ValueError:
+            return {}
+        return body if isinstance(body, dict) else {}
 
 
 class ProviderChain:

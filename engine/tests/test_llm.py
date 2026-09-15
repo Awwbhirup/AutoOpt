@@ -8,17 +8,22 @@ gives up.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
+import httpx
 import pytest
 
 from autoopt.cost import CostModel
 from autoopt.ir import TacProgram, source_to_tac
 from autoopt.llm.provider import (
+    MAX_OUTPUT_TOKENS,
     GenerationTooLongError,
+    GroqProvider,
     Provider,
     ProviderChain,
     ProviderExhaustedError,
+    raise_with_reason,
 )
 from autoopt.llm.specialist import LlmSpecialist, Validity
 from autoopt.llm.strategy import LlmStrategy
@@ -427,3 +432,73 @@ def test_overlong_tells_the_model_to_be_brief(tmp_path: Path) -> None:
     proposal = specialist.propose(source_to_tac(SOURCE))
 
     assert "fewer words" in proposal.as_ruled_out()
+
+
+# --- pacing against the token window -----------------------------------------------
+
+
+def budget_response(
+    status: int = 200, prompt_tokens: int = 300, limit: int = 8000
+) -> httpx.Response:
+    return httpx.Response(
+        status,
+        headers={
+            "x-ratelimit-limit-tokens": str(limit),
+            # Reads nearly full straight after a call, because the window
+            # refills continuously. This is exactly what made the old
+            # watermark check useless.
+            "x-ratelimit-remaining-tokens": str(limit - 21),
+            "x-ratelimit-reset-tokens": "157ms",
+        },
+        json={"usage": {"prompt_tokens": prompt_tokens}},
+        request=httpx.Request("POST", "https://example.invalid"),
+    )
+
+
+def test_pacing_waits_for_the_window_to_refill() -> None:
+    """A call reserves prompt plus the output ceiling, and must wait it out.
+
+    8000 tokens a minute refills at 133 a second, so a call reserving about
+    1836 owes roughly 14 seconds before the next one can fit.
+    """
+    owed = owed_after(300)
+    assert owed == pytest.approx((300 + MAX_OUTPUT_TOKENS) / (8000 / 60) / 0.85, rel=0.05)
+    assert owed > 14
+
+
+def owed_after(prompt_tokens: int, status: int = 200) -> float:
+    """The wait a call of this size earns, measured rather than compared."""
+    provider = GroqProvider(api_key="k")
+    before = time.monotonic()
+    provider._note_budget(budget_response(status=status, prompt_tokens=prompt_tokens))
+    return provider._next_allowed - before
+
+
+def test_pacing_grows_with_the_prompt() -> None:
+    """Longer programs reserve more, so they owe the window more.
+
+    Compared as durations. Comparing the two deadlines directly would pass on
+    a fixed interval too, since the second provider simply starts later.
+    """
+    assert owed_after(900) > owed_after(200) + 4
+
+
+def test_refusal_waits_the_reset_the_provider_reports() -> None:
+    provider = GroqProvider(api_key="k")
+    response = budget_response(status=429)
+    response.headers["x-ratelimit-reset-tokens"] = "45s"
+    before = time.monotonic()
+    provider._note_budget(response)
+
+    assert provider._next_allowed - before > 45
+
+
+def test_error_text_keeps_the_provider_reason() -> None:
+    """A refusal used to arrive as a status line with the reason stripped."""
+    response = httpx.Response(
+        429,
+        json={"error": {"message": "Rate limit reached for model X: try again in 3s"}},
+        request=httpx.Request("POST", "https://example.invalid"),
+    )
+    with pytest.raises(httpx.HTTPStatusError, match="Rate limit reached for model X"):
+        raise_with_reason(response)
