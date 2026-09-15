@@ -8,6 +8,12 @@ happened, and forgets it.
 from __future__ import annotations
 
 from autoopt.arms import LLM_ARMS
+from autoopt.events import (
+    OptimizationType,
+    RejectReason,
+    VerificationMethod,
+    VerificationVerdict,
+)
 from autoopt.search import METHOD_NAMES
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -17,6 +23,9 @@ from .schemas import (
     MethodInfo,
     MethodsResponse,
     OptimizeRequest,
+    RunFailed,
+    VocabularyResponse,
+    engine_event_kinds,
 )
 from .streaming import ndjson
 
@@ -70,4 +79,20 @@ async def optimize_stream(request: OptimizeRequest) -> StreamingResponse:
             "Cache-Control": "no-store",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+@app.get("/schema", response_model=VocabularyResponse)
+def vocabulary() -> VocabularyResponse:
+    """Every enumerated value that can appear in the stream.
+
+    Derived from the engine's own types rather than listed here, so this cannot
+    fall behind the thing it describes.
+    """
+    return VocabularyResponse(
+        event_kinds=[*engine_event_kinds(), RunFailed.model_fields["kind"].default],
+        optimization_types=[member.value for member in OptimizationType],
+        verification_methods=[member.value for member in VerificationMethod],
+        verification_verdicts=[member.value for member in VerificationVerdict],
+        reject_reasons=[member.value for member in RejectReason],
     )

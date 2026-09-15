@@ -7,8 +7,9 @@ shape of its own, since it is the one thing the engine does not produce.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, get_args
 
+from autoopt.events import Event
 from autoopt.orchestrator import DEFAULT_MAX_ITERATIONS
 from autoopt.search import METHOD_NAMES
 from pydantic import BaseModel, Field
@@ -79,3 +80,32 @@ class MethodsResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
     methods: int = Field(default=len(METHOD_NAMES))
+
+
+class VocabularyResponse(BaseModel):
+    """The enumerated values the event stream uses.
+
+    Published so the application tier can be checked against the engine rather
+    than hand-copying its enums and hoping. A transformation added to the
+    catalog shows up here, and the test on the other side fails until the
+    other side knows about it.
+    """
+
+    event_kinds: list[str]
+    optimization_types: list[str]
+    verification_methods: list[str]
+    verification_verdicts: list[str]
+    reject_reasons: list[str]
+
+
+def engine_event_kinds() -> list[str]:
+    """The `kind` discriminator of every event the engine can emit.
+
+    Read off the union rather than written out, because a list written out is
+    one that will eventually be missing whatever was added last.
+    """
+    kinds: list[str] = []
+    for member in get_args(Event):
+        annotation = member.model_fields["kind"].annotation
+        kinds.append(str(get_args(annotation)[0]))
+    return kinds

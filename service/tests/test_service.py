@@ -186,3 +186,36 @@ def test_absurd_iteration_count_is_rejected(client: TestClient) -> None:
 
 def test_negative_seed_is_rejected(client: TestClient) -> None:
     assert post(client, seed=-1).status_code == 422
+
+
+# --- the published vocabulary ------------------------------------------------------
+
+
+def test_schema_lists_every_event_kind(client: TestClient) -> None:
+    """Including the one the service adds, which the engine knows nothing about."""
+    kinds = client.get("/schema").json()["event_kinds"]
+    assert "run_started" in kinds
+    assert "run_converged" in kinds
+    assert "run_failed" in kinds
+
+
+def test_schema_is_derived_from_the_engine(client: TestClient) -> None:
+    """Written out by hand, this list would end up missing whatever came last."""
+    from autoopt.events import OptimizationType
+
+    published = client.get("/schema").json()["optimization_types"]
+    assert published == [member.value for member in OptimizationType]
+
+
+def test_every_kind_the_stream_emits_is_published(client: TestClient) -> None:
+    """The guard that matters: a consumer trusting /schema must not meet a kind
+    that is missing from it."""
+    published = set(client.get("/schema").json()["event_kinds"])
+    seen = {event["kind"] for event in lines(post(client, method="astar"))}
+    assert seen <= published
+
+
+def test_the_failure_kind_is_published_too(client: TestClient) -> None:
+    published = set(client.get("/schema").json()["event_kinds"])
+    seen = {event["kind"] for event in lines(post(client, source=BROKEN_SOURCE))}
+    assert seen <= published
