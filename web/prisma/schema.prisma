@@ -1,0 +1,354 @@
+// The application tier owns all persistence. The compute service holds nothing,
+// so everything a user can see or change is described here, once.
+//
+// Shape follows the domain in the plan: a workspace is the tenancy boundary and
+// every other row reaches a workspace through exactly one path, which is what
+// lets authorization be a single function rather than a check per query.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- identity ---------------------------------------------------------------
+// Account, Session and VerificationToken are the shapes Auth.js expects. The
+// password hash lives on User rather than in a table of its own because a user
+// has at most one, and sign-in offers both GitHub and a password.
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts     Account[]
+  sessions     Session[]
+  memberships  Membership[]
+  programs     Program[]
+  runs         Run[]
+  apiKeys      ApiKey[]
+  auditEntries AuditLog[]
+  shareLinks   ShareLink[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// --- tenancy ----------------------------------------------------------------
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  projects    Project[]
+  suites      BenchmarkSuite[]
+  apiKeys     ApiKey[]
+  auditLog    AuditLog[]
+  quota       Quota?
+}
+
+model Membership {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        Role     @default(MEMBER)
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // One role per person per workspace. Two rows would make authorization
+  // ambiguous in a way no amount of care at the call site could fix.
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+// --- programs ---------------------------------------------------------------
+
+model Project {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  programs  Program[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+model Program {
+  id          String   @id @default(cuid())
+  projectId   String
+  authorId    String?
+  name        String
+  source      String   @db.Text
+  category    String   @default("mixed")
+  /// Instruction counts and the like, as the engine reports them. Denormalized
+  /// so a program list does not have to parse every program to render.
+  features    Json?
+  /// Set when the source arrived as an upload rather than being typed.
+  uploadName  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author  User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  runs    Run[]
+
+  @@index([projectId])
+  @@index([authorId])
+}
+
+// --- runs -------------------------------------------------------------------
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  // The documented limitation: a client that disconnects abandons its run, and
+  // a run in that state is neither a success nor an engine failure.
+  ABANDONED
+}
+
+model Run {
+  id         String    @id @default(cuid())
+  programId  String
+  startedById String?
+  suiteRunId String?
+
+  method     String
+  seed       Int       @default(0)
+  /// The rest of RunConfig as sent, so a run can be repeated exactly.
+  config     Json
+  status     RunStatus @default(QUEUED)
+
+  costBefore Float?
+  costAfter  Float?
+  /// The PASS/FAIL verdict: did the optimized program still behave the same.
+  outputMatch Boolean?
+  /// Z3's answer when the run asked for one, including unknown_bounded.
+  finalProof String?
+  error      String?   @db.Text
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  program         Program          @relation(fields: [programId], references: [id], onDelete: Cascade)
+  startedBy       User?            @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  suiteRun        SuiteRun?        @relation(fields: [suiteRunId], references: [id], onDelete: SetNull)
+  events          RunEvent[]
+  transformations Transformation[]
+  shareLinks      ShareLink[]
+
+  @@index([programId])
+  @@index([startedById])
+  @@index([suiteRunId])
+  @@index([status])
+}
+
+model RunEvent {
+  id    String @id @default(cuid())
+  runId String
+  /// Monotonic within a run. The decision log's ordering key, so the trace can
+  /// be replayed in the order it happened rather than the order it was written.
+  seq   Int
+  kind  String
+  /// The engine's event, stored whole. Keeping the payload rather than a column
+  /// per field means the engine can add an event type without a migration, and
+  /// the trace a report quotes stays byte-identical to the one persisted here.
+  payload   Json
+  createdAt DateTime @default(now())
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, seq])
+  @@index([runId, seq])
+}
+
+model Transformation {
+  id     String @id @default(cuid())
+  runId  String
+  /// Which optimization it was, from the engine's catalog.
+  kind   String
+  /// Line in the three-address listing the change was made at.
+  site   Int
+  costBefore Float
+  costAfter  Float
+  verificationMethod  String
+  verificationVerdict String
+  accepted     Boolean
+  /// Why it was turned down, when it was.
+  rejectReason String?
+  createdAt    DateTime @default(now())
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([kind])
+}
+
+// --- suites -----------------------------------------------------------------
+
+model BenchmarkSuite {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  /// Which methods and categories to cross, and at what budgets. The batch
+  /// experiment, expressed as data instead of a command line.
+  grid        Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  suiteRuns SuiteRun[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+model SuiteRun {
+  id        String    @id @default(cuid())
+  suiteId   String
+  status    RunStatus @default(QUEUED)
+  total     Int       @default(0)
+  completed Int       @default(0)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  suite BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  runs  Run[]
+
+  @@index([suiteId])
+}
+
+// --- sharing, keys, audit, quota --------------------------------------------
+
+model ShareLink {
+  id        String    @id @default(cuid())
+  runId     String
+  createdById String?
+  token     String    @unique
+  expiresAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  run       Run   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([runId])
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  workspaceId String
+  createdById String?
+  name        String
+  /// Only the hash is kept. The key itself is shown once, at creation, and is
+  /// not recoverable afterwards.
+  hash        String    @unique
+  /// Enough of the key to recognise it in a list without revealing it.
+  prefix      String
+  scopes      String[]
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  actorId     String?
+  action      String
+  /// What was acted on, as a type and id rather than a foreign key, so an entry
+  /// survives the thing it describes being deleted.
+  resourceType String
+  resourceId   String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor     User?     @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([actorId])
+}
+
+model Quota {
+  id          String   @id @default(cuid())
+  workspaceId String   @unique
+  /// Runs allowed per calendar month, and how many have been used in the
+  /// current one. Reset by date rather than by a scheduled job.
+  monthlyRuns Int      @default(500)
+  usedRuns    Int      @default(0)
+  periodStart DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
