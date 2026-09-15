@@ -25,21 +25,24 @@ import httpx
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_CACHE_DIR = ".llm_cache"
 
-#: The answer is one small JSON object, but the model reasons out loud before it
-#: and that preamble is charged as output too. Measured across the corpus: most
-#: categories finish in about 55 tokens, loops in 972, because a loop is where
-#: there is something to think about. A cap below the preamble does not truncate
-#: the reply, it kills the request outright, since the object never closes and
-#: the provider rejects the whole generation as invalid JSON.
+#: Two separate limits act on this number and they pull opposite ways.
 #:
-#: Providers reserve this whole number against a per-minute budget whether it is
-#: used or not, so it also sets how many calls fit in a minute. Hence a ceiling
-#: with headroom over the worst case observed rather than a generous one.
-MAX_OUTPUT_TOKENS = 1536
+#: A request is admitted only if its expected output fits the output-tokens-per
+#: minute cap, which is 1000 on this tier, so the ceiling has to stay well under
+#: that. But a cap below what the model actually emits does not truncate the
+#: reply, it kills the request: the JSON object never closes and the whole
+#: generation is rejected as invalid.
+#:
+#: With reasoning suppressed the worst case measured across every category is
+#: 317 tokens, most sitting near 55, so this clears the real need several times
+#: over while staying half the admission limit.
+MAX_OUTPUT_TOKENS = 512
 
-#: Stand-in prompt size for pacing the very first call, before any response has
-#: reported a real one. Near the middle of the corpus rather than generous: the
-#: first call's own reply corrects it.
+#: Stand-in output size for pacing the very first call, before any response has
+#: reported a real one. The first reply corrects it.
+ASSUMED_OUTPUT_TOKENS = 120
+
+#: Stand-in prompt size, same reasoning.
 ASSUMED_PROMPT_TOKENS = 400
 
 
@@ -245,10 +248,20 @@ class GroqProvider(Provider):
     MIN_INTERVAL = 6.0
     #: Assumed per-minute token budget until a response tells us the real one.
     DEFAULT_TOKEN_LIMIT = 8000
+    #: Output tokens per minute. Not reported in any header, unlike the combined
+    #: budget, so it has to be carried here. Measured: ten calls six seconds
+    #: apart, each emitting about 58 tokens, pass without a refusal, which puts
+    #: consumption at what the reply actually costs rather than what it reserved.
+    OUTPUT_TOKEN_LIMIT = 1000
     #: Spend this share of the refill rate rather than all of it. The budget is
     #: a bucket shared with anything else on the key, and a call that arrives a
     #: moment early is refused outright rather than queued.
     SAFETY = 0.85
+    #: Qwen reasons out loud by default, and on a loop-heavy program that
+    #: preamble ran past any ceiling the admission limit allows, taking the
+    #: whole request with it. This is the model's own switch for turning it off.
+    #: Suppressing it left every answer unchanged where one came back at all.
+    NO_THINK = "/no_think"
 
     def __init__(self, api_key: str, model: str = "qwen/qwen3.8-27b") -> None:
         self.api_key = api_key
@@ -257,6 +270,7 @@ class GroqProvider(Provider):
         #: Last prompt size seen, used to pace the next call when a response
         #: carries no usage of its own, as a refusal does.
         self._last_prompt_tokens = ASSUMED_PROMPT_TOKENS
+        self._last_output_tokens = ASSUMED_OUTPUT_TOKENS
 
     @property
     def available(self) -> bool:
@@ -282,12 +296,15 @@ class GroqProvider(Provider):
         The prompt length comes from the response when the provider reports it,
         since it grows with the program being optimized.
         """
+        usage = self._reported_usage(response)
+        prompt_tokens = prompt_tokens or usage[0] or self._last_prompt_tokens
+        output_tokens = usage[1] or self._last_output_tokens
+
         limit = self._header_int(response, "x-ratelimit-limit-tokens") or self.DEFAULT_TOKEN_LIMIT
-        refill_per_second = limit / 60.0
-        if prompt_tokens is None:
-            prompt_tokens = self._reported_prompt_tokens(response)
-        spent = (prompt_tokens or self._last_prompt_tokens) + MAX_OUTPUT_TOKENS
-        delay = max(self.MIN_INTERVAL, spent / refill_per_second / self.SAFETY)
+        # Two windows, and whichever needs longer is the one that binds.
+        combined = (prompt_tokens + output_tokens) / (limit / 60.0)
+        output_only = output_tokens / (self.OUTPUT_TOKEN_LIMIT / 60.0)
+        delay = max(self.MIN_INTERVAL, max(combined, output_only) / self.SAFETY)
 
         if response.status_code == 429:
             # Already over. The provider says how long the window needs, and
@@ -298,12 +315,19 @@ class GroqProvider(Provider):
         self._next_allowed = time.monotonic() + delay
 
     @classmethod
-    def _reported_prompt_tokens(cls, response: httpx.Response) -> int | None:
+    def _reported_usage(cls, response: httpx.Response) -> tuple[int | None, int | None]:
+        """Prompt and completion tokens as the provider counted them.
+
+        Paced on what the reply actually cost rather than on what it reserved,
+        because the reservation is only an admission check. Pacing on it instead
+        would idle at a fifth of the rate the budget allows.
+        """
         usage = cls._payload(response).get("usage")
         if not isinstance(usage, dict):
-            return None
-        reported = usage.get("prompt_tokens")
-        return int(reported) if reported else None
+            return None, None
+        prompt = usage.get("prompt_tokens")
+        output = usage.get("completion_tokens")
+        return (int(prompt) if prompt else None, int(output) if output else None)
 
     @staticmethod
     def _header_int(response: httpx.Response, name: str) -> int | None:
@@ -312,6 +336,17 @@ class GroqProvider(Provider):
         except (KeyError, ValueError):
             return None
 
+    def _sent(self, prompt: str) -> str:
+        """The prompt as this model needs to receive it.
+
+        Kept here rather than in the prompt template because it is a property
+        of one model, not of the task. Another model would see a stray token,
+        and answers are cached per model, so the two cannot mix.
+        """
+        if "qwen" not in self.model.lower():
+            return prompt
+        return f"{prompt}\n{self.NO_THINK}"
+
     def complete(self, prompt: str) -> str:
         self._wait_for_slot()
         response = httpx.post(
@@ -319,7 +354,7 @@ class GroqProvider(Provider):
             headers={"Authorization": f"Bearer {self.api_key}"},
             json={
                 "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": [{"role": "user", "content": self._sent(prompt)}],
                 "temperature": 0,
                 "response_format": {"type": "json_object"},
                 # Without this Groq reserves the model's full output window
@@ -333,10 +368,11 @@ class GroqProvider(Provider):
         # Before raise_for_status: a refusal carries the budget headers too, and
         # that is exactly when knowing how long to wait matters most.
         payload = self._payload(response)
-        usage = payload.get("usage") if isinstance(payload, dict) else None
-        prompt_tokens = usage.get("prompt_tokens") if isinstance(usage, dict) else None
+        prompt_tokens, output_tokens = self._reported_usage(response)
         if prompt_tokens:
-            self._last_prompt_tokens = int(prompt_tokens)
+            self._last_prompt_tokens = prompt_tokens
+        if output_tokens:
+            self._last_output_tokens = output_tokens
         self._note_budget(response, prompt_tokens)
 
         if response.status_code == 400 and _json_validate_failed(response):
