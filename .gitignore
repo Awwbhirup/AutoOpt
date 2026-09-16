@@ -87,3 +87,9 @@ engine/.llm_cache/
 
 # Additional provider keys, one per line, for the parallel pass.
 engine/groq.keys
+
+# Editor directories.
+.vscode/
+.idea/
+.claude/
+.fleet/
