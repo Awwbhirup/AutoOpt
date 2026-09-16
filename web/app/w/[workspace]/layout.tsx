@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 
 import { WorkspaceHeader } from "@/components/shell/header";
+import { authorize } from "@/lib/authorize";
 import { requireWorkspace } from "@/lib/workspace";
 
 export default async function WorkspaceLayout({
@@ -20,11 +21,16 @@ export default async function WorkspaceLayout({
   params: Promise<{ workspace: string }>;
 }) {
   const { workspace: slug } = await params;
-  const { workspace, role, user } = await requireWorkspace(slug);
+  const { workspace, role, user, principal } = await requireWorkspace(slug);
 
   return (
     <>
-      <WorkspaceHeader workspace={workspace} role={role} user={user} />
+      <WorkspaceHeader
+        workspace={workspace}
+        role={role}
+        user={user}
+        mayAudit={authorize(principal, "auditLog:view")}
+      />
       {children}
     </>
   );

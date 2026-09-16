@@ -16,10 +16,13 @@ export function WorkspaceHeader({
   workspace,
   role,
   user,
+  mayAudit,
 }: {
   workspace: { name: string; slug: string };
   role: Role;
   user: { name: string | null; email: string | null };
+  /** Decided by authorize() in the layout, not by comparing roles here. */
+  mayAudit: boolean;
 }) {
   const base = `/w/${workspace.slug}`;
   const links: NavLink[] = [
@@ -27,6 +30,10 @@ export function WorkspaceHeader({
     { href: base, label: "Dashboard", exact: true },
     { href: `${base}/projects`, label: "Projects" },
     { href: `${base}/runs`, label: "Runs" },
+    { href: `${base}/settings`, label: "People" },
+    // The page itself returns a 404 to anyone else, so leaving this out is
+    // about not offering a dead end rather than about keeping them out.
+    ...(mayAudit ? [{ href: `${base}/audit`, label: "Audit" }] : []),
     { href: "/docs", label: "Docs" },
   ];
 
