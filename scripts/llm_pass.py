@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import os
 import socket
 import subprocess
@@ -48,12 +49,20 @@ METHOD = os.environ.get("AUTOOPT_PASS_METHOD", "llm")
 #: Programs per category, 0 for the whole corpus. A subset is how an expensive
 #: arm gets a paired comparison against the full one without paying for 500.
 LIMIT = int(os.environ.get("AUTOOPT_PASS_LIMIT", "0"))
+#: Node budget for the cells this run fills, 0 for unconstrained. The rule-based
+#: methods were measured at 6, 10 and 16 as well as unconstrained; the LLM arm
+#: was not, so the method-by-budget design has a method missing from it.
+BUDGET = int(os.environ.get("AUTOOPT_PASS_BUDGET", "0"))
+#: What this run's files are called. Normally the method, but one method run at
+#: several budgets is several runs writing several files, and they must not
+#: share a name, a lock or a log.
+TAG = os.environ.get("AUTOOPT_PASS_TAG") or (f"{METHOD}_b{BUDGET}" if BUDGET else METHOD)
 
-OUT = ROOT / "data" / "runs" / f"{METHOD}.csv"
-LOG = ROOT / "data" / "runs" / f"{METHOD}_pass.log"
+OUT = ROOT / "data" / "runs" / f"{TAG}.csv"
+LOG = ROOT / "data" / "runs" / f"{TAG}_pass.log"
 #: The batch's own console output, kept apart from the supervisor's decisions
 #: so the decision log stays readable.
-BATCH_LOG = ROOT / "data" / "runs" / f"{METHOD}_pass_batches.log"
+BATCH_LOG = ROOT / "data" / "runs" / f"{TAG}_pass_batches.log"
 
 
 def batch_log(shard: int, shards: int) -> Path:
@@ -68,10 +77,10 @@ def batch_log(shard: int, shards: int) -> Path:
     return BATCH_LOG.with_name(f"{BATCH_LOG.stem}_shard{shard}{BATCH_LOG.suffix}")
 
 
-LOCK = ROOT / "data" / "runs" / f"{METHOD}_pass.lock"
+LOCK = ROOT / "data" / "runs" / f"{TAG}_pass.lock"
 #: Written when the job has stopped making progress. Its presence is what
 #: --status reports, so a silent stall has somewhere visible to show up.
-STUCK = ROOT / "data" / "runs" / f"{METHOD}_pass.stuck"
+STUCK = ROOT / "data" / "runs" / f"{TAG}_pass.stuck"
 #: One API key per line. Each gets its own slice of the corpus and its own
 #: output file. Absent or holding one key, the pass runs as a single worker.
 KEYS_FILE = ROOT / "engine" / "groq.keys"
@@ -81,9 +90,13 @@ KEYS_FILE = ROOT / "engine" / "groq.keys"
 TARGET_ROWS = LIMIT * 7 if LIMIT else 500
 TASK_NAME = "AutoOptLlmPass"
 
-#: Quota is a rolling window rather than a clock reset, so rather than working
-#: out when it lifts, ask again periodically. A refused request is cheap.
+#: The longest to wait for allowance before giving up and looking again anyway.
+#: Quota is a rolling window rather than a clock reset, so this is a ceiling on
+#: the wait and not the wait itself: see wait_for_allowance.
 RETRY_AFTER_QUOTA = timedelta(minutes=45)
+#: How often to ask, while waiting, whether allowance has come back. One tiny
+#: request per key, and only until one of them is served.
+PROBE_EVERY = timedelta(minutes=3)
 #: Something other than quota went wrong. Longer, because retrying a real fault
 #: quickly just fills the log.
 RETRY_AFTER_ERROR = timedelta(minutes=90)
@@ -143,13 +156,16 @@ def running_arm() -> str | None:
     return None
 
 
-def running_limit(arm: str) -> int:
-    """The per-category limit an arm's live workers were started with.
+def running_limit(tag: str) -> int:
+    """The per-category limit a run's live workers were started with.
 
     Read off the command line of a running worker, because the limit lives only
     in the supervisor's environment and the live view is a separate process
     that was never told. Zero means the whole corpus, which is also the answer
     when nothing is running.
+
+    Matched on the output file rather than the method, because one method run
+    at two node budgets is two runs with the same --methods and different files.
     """
     if os.name != "nt":
         return 0
@@ -170,9 +186,7 @@ def running_limit(arm: str) -> int:
         return 0
 
     for line in result.stdout.splitlines():
-        if f"--methods {arm} " not in line and not line.rstrip().endswith(
-            f"--methods {arm}"
-        ):
+        if f"{tag}.csv" not in line and f"{tag}_shard" not in line:
             continue
         parts = line.split()
         if "--limit" in parts:
@@ -181,6 +195,93 @@ def running_limit(arm: str) -> int:
                 return int(value)
         return 0
     return 0
+
+
+def arm_model() -> str:
+    """The model id this arm runs on, empty for whatever the environment sets.
+
+    Read out of the engine's registry by file rather than by import. The
+    supervisor is run by hand for --status as often as it is run by the
+    scheduler, and importing the package would make that need the engine's
+    dependencies installed in whichever interpreter was to hand.
+    """
+    registry = ENGINE / "autoopt" / "arms.py"
+    try:
+        spec = importlib.util.spec_from_file_location("_autoopt_arms", registry)
+        if spec is None or spec.loader is None:
+            return ""
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return str(module.LLM_ARMS.get(METHOD, ""))
+    except (OSError, AttributeError, SyntaxError):
+        return ""
+
+
+def allowance_returned(model: str) -> bool:
+    """Will any key take work again?
+
+    One token asked of each key, stopping at the first that is served. A refused
+    request costs nothing against the budget it is asking about, which is what
+    makes asking cheaper than guessing when the budget will come back.
+
+    Asked of this arm's own model, because the daily token budget is per model:
+    a key with room for the small model can still be out of room for the large
+    one, and a probe against the wrong one would start a batch that immediately
+    stops again.
+    """
+    try:
+        import httpx
+    except ImportError:
+        # No client, so no way to ask. The caller falls back to waiting out the
+        # ceiling, which is what it did before there was anything to ask with.
+        return False
+
+    payload: dict[str, object] = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 1,
+    }
+    if model:
+        payload["model"] = model
+    elif os.environ.get("AUTOOPT_GROQ_MODEL"):
+        payload["model"] = os.environ["AUTOOPT_GROQ_MODEL"]
+
+    for key in api_keys():
+        try:
+            response = httpx.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}"},
+                json=payload,
+                timeout=20,
+            )
+        except httpx.HTTPError:
+            continue
+        if response.status_code == 200:
+            return True
+    return False
+
+
+def wait_for_allowance(ceiling: timedelta) -> None:
+    """Sleep until a key will take work again, or until the ceiling runs out.
+
+    The daily token budget is a rolling window, so allowance comes back
+    gradually and when it comes back is not something the clock can be asked.
+    A flat wait is therefore either longer than it needed to be, which is what
+    left eight programs sitting while every key had room again, or shorter than
+    it should have been, which spends a request per worker to be told no.
+    """
+    model = arm_model()
+    deadline = time.monotonic() + ceiling.total_seconds()
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            log(f"no key took work within {ceiling}; looking again anyway")
+            return
+        # Asked after the wait rather than before it: we are here because a
+        # worker was just refused, so the answer now is already known.
+        time.sleep(min(PROBE_EVERY.total_seconds(), remaining))
+        if allowance_returned(model):
+            log("a key is taking work again")
+            return
 
 
 def api_keys() -> list[str]:
@@ -291,7 +392,10 @@ def orphaned_batches() -> list[int]:
     query = (
         "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
         "Where-Object { $_.CommandLine -like '*autoopt.cli experiment*' "
-        "-and $_.CommandLine -like '*--methods " + METHOD + " *' } | "
+        # By output file, not by method: the same method run at two budgets is
+        # two runs, and killing one because the other is gone would be wrong.
+        f"-and ($_.CommandLine -like '*{OUT.name}*' "
+        f"-or $_.CommandLine -like '*{OUT.stem}_shard*') }} | "
         'ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }'
     )
     try:
@@ -347,6 +451,8 @@ def batch_command(output: Path, shard: int, shards: int) -> list[str]:
     ]
     if LIMIT:
         command += ["--limit", str(LIMIT)]
+    if BUDGET:
+        command += ["--budgets", str(BUDGET)]
     if shards > 1:
         command += ["--shards", str(shards), "--shard", str(shard)]
     return command
@@ -505,23 +611,21 @@ def supervise() -> int:
                     # Every worker had nothing it could do. Restarting at once
                     # would spin: they would exit immediately again, and the
                     # only thing spent would be a request each.
-                    log(
-                        f"nothing left that any key can reach; waiting {RETRY_AFTER_QUOTA}"
-                    )
+                    log("nothing left that any key can reach; waiting for allowance")
                     if barren >= BARREN_LIMIT:
                         mark_stuck(barren, code)
-                    time.sleep(RETRY_AFTER_QUOTA.total_seconds())
+                    wait_for_allowance(RETRY_AFTER_QUOTA)
                     continue
                 log(f"batch finished cleanly, {gained} programs added")
                 continue
             if code == EXIT_QUOTA:
                 log(
                     f"daily allowance spent after {gained} programs; "
-                    f"waiting {RETRY_AFTER_QUOTA}"
+                    f"waiting for it to come back"
                 )
                 if barren >= BARREN_LIMIT:
                     mark_stuck(barren, code)
-                time.sleep(RETRY_AFTER_QUOTA.total_seconds())
+                wait_for_allowance(RETRY_AFTER_QUOTA)
                 continue
 
             log(

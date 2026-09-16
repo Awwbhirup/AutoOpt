@@ -30,14 +30,17 @@ from rich.text import Text
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Which arm to watch has to be settled before llm_pass is imported, since its
-# paths are derived from it at import time. An arm named on the command line
-# wins; failing that, whichever arm is currently running; failing that, the
+# Which run to watch has to be settled before llm_pass is imported, since its
+# paths are derived from it at import time. A run named on the command line
+# wins; failing that, whichever run is currently going; failing that, the
 # default. The view is opened from a desktop shortcut that cannot know which
-# arm is in flight, and showing a finished one while another works looks
+# run is in flight, and showing a finished one while another works looks
 # exactly like the thing being broken.
+#
+# The name is the tag, not the method: the LLM arm is measured at several node
+# budgets, and those runs share a method and differ in everything else.
 if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
-    os.environ["AUTOOPT_PASS_METHOD"] = sys.argv[1]
+    os.environ["AUTOOPT_PASS_TAG"] = sys.argv[1]
     if len(sys.argv) > 2 and sys.argv[2].isdigit():
         os.environ["AUTOOPT_PASS_LIMIT"] = sys.argv[2]
 else:
@@ -45,7 +48,7 @@ else:
 
     _live = _probe.running_arm()
     if _live:
-        os.environ["AUTOOPT_PASS_METHOD"] = _live
+        os.environ["AUTOOPT_PASS_TAG"] = _live
         # The target row count comes from the limit, and the limit is not
         # written down anywhere except the running supervisor's environment.
         # Infer it from what that arm's workers were told.
@@ -190,7 +193,7 @@ class Watcher:
             TextColumn("[dim]{task.percentage:>3.0f}%"),
             expand=False,
         )
-        bar.add_task(pass_.METHOD, total=pass_.TARGET_ROWS, completed=done)
+        bar.add_task(pass_.TAG, total=pass_.TARGET_ROWS, completed=done)
 
         table = Table(box=None, pad_edge=False, header_style="dim")
         table.add_column("worker", justify="right")
