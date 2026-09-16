@@ -131,12 +131,18 @@ class Log {
     return this;
   }
 
-  decided(type: OptimizationType, accepted: boolean, reason: RejectReason | null = null): this {
+  decided(
+    type: OptimizationType,
+    accepted: boolean,
+    reason: RejectReason | null = null,
+    site: number | null = null,
+  ): this {
     this.events.push({
       ...this.head(),
       kind: "decision",
       accepted,
       optimization_type: type,
+      site,
       reject_reason: reason,
     });
     return this;
@@ -371,6 +377,21 @@ describe("events that do not fit the usual order", () => {
     expect(steps[0].site).toBeNull();
     expect(steps[0].outcome).toEqual({ accepted: false, rejectReason: "not_applicable" });
     expect(summary.rejected).toBe(1);
+  });
+
+  it("keeps the site of an acceptance reported after the search settled", () => {
+    // How every accepted rewrite arrives: the search reports what it kept once
+    // it has finished, so there is no step open and the site on the event is
+    // the only thing that says where the rewrite happened. It used to be
+    // dropped, and every accepted step in the application rendered "no site".
+    const events = new Log()
+      .started(START, cost(100, 3))
+      .decided("dead_code_elimination", true, null, 7).events;
+
+    const { steps } = foldTrace(events);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].site).toBe(7);
+    expect(steps[0].outcome).toEqual({ accepted: true, rejectReason: null });
   });
 
   it("drops a verdict that belongs to a step already decided", () => {

@@ -273,7 +273,11 @@ export function foldTrace(events: StreamedEvent[]): Trace {
 
       case "decision": {
         if (open === null || open.closed) {
-          open = begin(event.iteration, event.optimization_type, null, []);
+          // Carrying the site through. An acceptance is reported once the
+          // search has settled, so it arrives with no step open and has to
+          // start one; passing null here threw away the only thing that says
+          // where it happened, which is what the engine added it to say.
+          open = begin(event.iteration, event.optimization_type, event.site, []);
         }
         const step = open.step;
         step.outcome = { accepted: event.accepted, rejectReason: event.reject_reason };

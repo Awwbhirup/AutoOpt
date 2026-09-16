@@ -114,6 +114,14 @@ export const decision = z.object({
   kind: z.literal("decision"),
   accepted: z.boolean(),
   optimization_type: optimizationType,
+  /**
+   * Where the transformation was applied, on an acceptance. Null on a
+   * rejection, which follows its proposal directly and needs no help being
+   * placed. The engine has sent this since acceptances started being reported
+   * after the search settles; this schema did not know about it, so it was
+   * parsed away and every accepted step rendered as having no site.
+   */
+  site: z.number().int().nullable().default(null),
   reject_reason: rejectReason.nullable().default(null),
 });
 

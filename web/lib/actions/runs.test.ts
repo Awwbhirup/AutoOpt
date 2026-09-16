@@ -102,12 +102,17 @@ class Log {
     return this;
   }
 
-  decided(accepted: boolean, rejectReason: "verification_failed" | null = null): this {
+  decided(
+    accepted: boolean,
+    rejectReason: "verification_failed" | null = null,
+    site: number | null = null,
+  ): this {
     this.events.push({
       ...this.head(),
       kind: "decision",
       accepted,
       optimization_type: "constant_folding",
+      site,
       reject_reason: rejectReason,
     });
     return this;
