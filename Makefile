@@ -1,4 +1,14 @@
-.PHONY: help install lint fmt type test serve app llm-pass llm-status llm-watch corpus experiment budgeted merge mutants analyze figures report notebook reproduce clean
+.PHONY: help install lint fmt type test serve app llm-pass llm-status llm-watch llm-grid corpus experiment budgeted merge mutants analyze figures report notebook reproduce clean
+
+# reproduce is a pipeline, not a set: merge needs the llm pass finished, and
+# analyze reads the mutation study off disk and quietly drops the M7 detection
+# numbers when it is not there yet. -j would let those race.
+.NOTPARALLEL:
+
+# The llm arms are levels of the method factor like any other, so "all" would
+# pull them into the offline grid and put the run behind a daily token quota.
+# They get their own pass and are merged in afterwards.
+RULES = fixed_pipeline,greedy,random_baseline,astar,hill_climbing,simulated_annealing
 
 help:
 	@echo "install     install the engine with dev dependencies"
@@ -11,10 +21,11 @@ help:
 	@echo "llm-pass    keep the llm pass going until the corpus is complete"
 	@echo "llm-status  how far the llm pass has got"
 	@echo "llm-watch   live view of the pass while it runs"
+	@echo "llm-grid    the llm arm at the three node budgets, one cell at a time"
 	@echo "corpus      generate the 500-program dataset"
-	@echo "experiment  run every method x category cell -> master CSV"
-	@echo "budgeted    the same grid at three search budgets, for the statistics"
-	@echo "merge       combine the run CSVs, refusing an uneven grid"
+	@echo "experiment  run the rule-based method x category cells -> master CSV"
+	@echo "budgeted    the same grid at three search budgets, for the M6 sweep"
+	@echo "merge       fold the llm pass into the rule grid -> complete CSV"
 	@echo "mutants     inject faults, measure what each verification channel catches"
 	@echo "analyze     statistics: ANOVA, regression, distribution fits, reliability"
 	@echo "figures     the six required plots + statistics plots"
@@ -64,19 +75,26 @@ llm-status:
 llm-watch:
 	python scripts/llm_watch.py
 
+# The cells budgeted skips. One budget at a time, waiting for the keys, because
+# every cell draws on the same daily token budget.
+llm-grid:
+	python scripts/llm_grid.py
+
 corpus:
 	cd engine && python -m autoopt.cli corpus --out ../data/corpus
 
 # Unconstrained. Answers what the system achieves, which is what the compiler
-# report quotes.
+# report quotes, though it quotes it from the merged CSV rather than this one.
 experiment:
-	cd engine && python -m autoopt.cli experiment --out ../data/runs/master.csv
+	cd engine && python -m autoopt.cli experiment --out ../data/runs/master.csv --methods $(RULES)
 
 # The same grid with the search capped, so methods are compared at equal effort.
-# Without the cap the plateau-crossing methods all reach the same result and
-# method stops being a usable factor.
+# Without the cap the three plateau-crossing methods land on the same program
+# every time and nothing can tell them apart. Rule-based only here: the llm arm
+# is capped the same way, but by scripts/llm_grid.py, which has to work around a
+# daily token budget this target knows nothing about.
 budgeted:
-	cd engine && python -m autoopt.cli experiment --out ../data/runs/budgeted.csv --budgets 6,10,16
+	cd engine && python -m autoopt.cli experiment --out ../data/runs/budgeted.csv --methods $(RULES) --budgets 6,10,16
 
 # The LLM pass runs into its own file, so a run that dies partway cannot corrupt
 # the grid the figures are built from. Merging is where coverage is checked.
@@ -86,21 +104,26 @@ merge:
 mutants:
 	cd engine && python -m autoopt.cli mutants --out ../data/verification/mutation_study.json
 
+# On the merged grid, like the figures and the report: one dataset behind every
+# number in both submissions. The budget sweep answers a narrower question and
+# is analysed in the notebook's M6 instead.
 analyze:
-	cd engine && python -m autoopt.cli analyze --data ../data/runs/budgeted.csv --budget 10
+	cd engine && python -m autoopt.cli analyze --data ../data/runs/complete.csv
 
 figures:
-	cd engine && python -m autoopt.cli figures --data ../data/runs/master.csv
+	cd engine && python -m autoopt.cli figures --data ../data/runs/complete.csv
 
 report:
-	cd engine && python -m autoopt.cli report --data ../data/runs/master.csv
+	cd engine && python -m autoopt.cli report --data ../data/runs/complete.csv
 
 notebook:
 	cd notebooks && python -m jupyter nbconvert --to notebook --execute --inplace analysis.ipynb
 
 # Every number and figure in both subject reports, regenerated from nothing.
-# Seeded throughout, so output is byte-identical across machines.
-reproduce: corpus experiment budgeted mutants analyze figures report notebook
+# Seeded throughout, so output is byte-identical across machines. The llm pass
+# is the slow part: on a cold cache it waits out the daily token quota, so this
+# is a multi-day target rather than an afternoon one.
+reproduce: corpus experiment llm-pass merge budgeted mutants analyze figures report notebook
 	@echo "Done. Figures and reports are under reports/generated/."
 
 clean:
