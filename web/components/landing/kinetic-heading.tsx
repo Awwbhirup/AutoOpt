@@ -3,33 +3,37 @@
 /**
  * A heading whose letters answer the pointer.
  *
- * Each character lifts and takes the accent colour in turn, left to right, then
- * settles back the same way. The stagger is what makes it read as one movement
- * crossing the line rather than every letter twitching at once, and springs
- * rather than durations are what keep it from arriving with a stop: a letter
- * still settling when the pointer leaves reverses from wherever it got to,
- * instead of snapping to the end of an animation it never finished.
+ * Each character lifts and takes the accent colour in turn, left to right. The
+ * stagger is a transition-delay per letter, so the movement crosses the line
+ * rather than every letter twitching at once.
+ *
+ * Pure CSS. It was forty-four springs a heading before, each interpolating a
+ * transform and a colour on the main thread, and on a page already running two
+ * canvases and a backdrop filter they arrived late and unevenly, which is what
+ * the jitter was. A transition on transform and colour is handed to the
+ * compositor and costs nothing per frame.
  *
  * Split by word first, then by character inside each word. Splitting straight
- * into characters is the obvious way to write this and it breaks the heading:
- * every character becomes an inline-block, so the browser may wrap between any
- * two of them, and "Every rewrite is checked" came apart as "Everyre /
- * writeisc / hecked". The word wrappers are what carry the line breaks, and
- * nothing inside one can be split.
+ * into characters makes every one an inline-block, so the browser may wrap
+ * between any two of them and "Every rewrite is checked" comes apart as
+ * "Everyre / writeisc / hecked". The word wrappers carry the line breaks.
  *
- * The real text is in the DOM once as a visually hidden string. The animated
- * copy is hidden from assistive technology, which would otherwise read a
- * heading one letter at a time.
+ * The spaces are text nodes between the wrappers, not inside them. A trailing
+ * space inside an inline-block is trimmed, which is how the words ended up
+ * jammed together.
+ *
+ * The real text is in the DOM once, hidden, for assistive technology; the
+ * animated copy would otherwise be read a letter at a time.
  */
 
-import { motion, useReducedMotion } from "motion/react";
+import { Fragment } from "react";
 
-/** Per character. Short enough that a long heading stays one gesture. */
-const STAGGER = 0.016;
+/** Per character. Fast enough that a long heading is one gesture, not a wave. */
+const STAGGER_MS = 11;
 
 export function KineticHeading({
   text,
-  className,
+  className = "",
   accentFrom,
 }: {
   text: string;
@@ -40,82 +44,46 @@ export function KineticHeading({
    */
   accentFrom?: number;
 }) {
-  const reduced = useReducedMotion();
-
-  if (reduced) {
-    return (
-      <span className={className}>
-        {accentFrom === undefined ? (
-          text
-        ) : (
-          <>
-            {text.slice(0, accentFrom)}
-            <span className="text-accent">{text.slice(accentFrom)}</span>
-          </>
-        )}
-      </span>
-    );
-  }
-
-  // Kept with their trailing space so the gaps survive. A space rendered as its
-  // own inline-block collapses, and the words run together.
   const words = text.split(" ");
 
   // Each word's character offset in the whole string, worked out up front. A
   // counter incremented inside the map would be reassigned by a callback that
-  // can run after render has finished, which is a different value on a second
-  // pass and a different stagger every time the component re-renders.
-  const offsets = words.reduce<number[]>((acc, word, index) => {
+  // can run after render completes, giving a different stagger each pass.
+  const offsets = words.reduce<number[]>((acc, _word, index) => {
     acc.push(index === 0 ? 0 : acc[index - 1] + words[index - 1].length + 1);
     return acc;
   }, []);
 
   return (
-    <motion.span className={className} initial="rest" whileHover="lift">
+    <span className={`group/kin ${className}`}>
       <span className="sr-only">{text}</span>
 
       <span aria-hidden>
-        {words.map((word, wordIndex) => {
-          const start = offsets[wordIndex];
-
-          return (
-            <span
-              key={wordIndex}
-              // Holds the word together. Line breaks happen between these.
-              className="inline-block whitespace-nowrap"
-            >
+        {words.map((word, wordIndex) => (
+          <Fragment key={wordIndex}>
+            {/* Holds the word together; line breaks happen between these. */}
+            <span className="inline-block whitespace-nowrap">
               {Array.from(word).map((character, index) => {
-                const at = start + index;
+                const at = offsets[wordIndex] + index;
                 const accented = accentFrom !== undefined && at >= accentFrom;
 
                 return (
-                  <motion.span
+                  <span
                     key={index}
-                    className="inline-block will-change-transform"
-                    variants={{
-                      rest: {
-                        y: 0,
-                        color: accented ? "var(--accent)" : "var(--foreground)",
-                      },
-                      lift: { y: "-0.08em", color: "var(--accent)" },
-                    }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 420,
-                      damping: 26,
-                      mass: 0.5,
-                      delay: at * STAGGER,
-                    }}
+                    style={{ transitionDelay: `${at * STAGGER_MS}ms` }}
+                    className={`inline-block transition-[transform,color] duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/kin:-translate-y-[0.07em] group-hover/kin:text-accent motion-reduce:transition-none motion-reduce:transform-none ${
+                      accented ? "text-accent" : ""
+                    }`}
                   >
                     {character}
-                  </motion.span>
+                  </span>
                 );
               })}
-              {wordIndex < words.length - 1 ? " " : null}
             </span>
-          );
-        })}
+            {wordIndex < words.length - 1 ? " " : null}
+          </Fragment>
+        ))}
       </span>
-    </motion.span>
+    </span>
   );
 }

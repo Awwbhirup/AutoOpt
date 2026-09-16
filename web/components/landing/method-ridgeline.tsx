@@ -204,13 +204,29 @@ export function MethodRidgeline({ className }: { className?: string }) {
         context.fill(filled);
 
         context.save();
+        context.lineJoin = "round";
+
+        // The glow used to be a canvas shadow on every ridge, every frame.
+        // shadowBlur is the most expensive thing in the 2D context and eight of
+        // them at sixty frames a second was the rest of the weight. Two wider
+        // translucent passes under the stroke read the same and cost what any
+        // other stroke costs.
         if (!dimmed) {
-          context.shadowBlur = isHovered ? 26 : 14;
+          context.strokeStyle = css(colour, 0.1);
+          context.lineWidth = isHovered ? 11 : 7;
+          context.stroke(outline);
+          context.strokeStyle = css(colour, 0.2);
+          context.lineWidth = isHovered ? 5 : 3.4;
+          context.stroke(outline);
+        }
+
+        // Only the hovered ridge gets the real thing, and only one at a time.
+        if (isHovered) {
+          context.shadowBlur = 18;
           context.shadowColor = css(colour);
         }
         context.strokeStyle = dimmed ? "rgba(125, 134, 148, 0.28)" : css(colour);
         context.lineWidth = isHovered ? 2.4 : 1.5;
-        context.lineJoin = "round";
         context.stroke(outline);
         context.restore();
       }
@@ -228,7 +244,30 @@ export function MethodRidgeline({ className }: { className?: string }) {
     // is occluded, and a chart that only ever paints inside it is a blank box
     // until the reader happens to look at it.
     render(performance.now());
-    raf = window.requestAnimationFrame(loop);
+
+    // Only animate while it is on screen. Two canvases redrawing sixty times a
+    // second for the whole length of the page, most of it with neither of them
+    // in view, was most of why scrolling felt heavy.
+    const start_ = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(loop);
+    };
+    const halt = () => {
+      window.cancelAnimationFrame(raf);
+      raf = 0;
+    };
+
+    const watcher = new IntersectionObserver(
+      ([entry]) => (entry.isIntersecting ? start_() : halt()),
+      { rootMargin: "120px" },
+    );
+    watcher.observe(canvas);
+
+    const onVisibility = () => {
+      if (document.hidden) halt();
+      else if (watcher.takeRecords().length === 0) start_();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     const onResize = () => {
       resize();
@@ -237,6 +276,8 @@ export function MethodRidgeline({ className }: { className?: string }) {
     window.addEventListener("resize", onResize);
     return () => {
       window.cancelAnimationFrame(raf);
+      watcher.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("resize", onResize);
     };
   }, []);

@@ -56,6 +56,22 @@ const HOW = [
   },
 ];
 
+/** The run beside this, split the two ways it can go. Eight were costed. */
+const TALLY = [
+  {
+    value: 3,
+    share: 3 / 8,
+    token: "--accent",
+    label: "rewrites kept, each one proved and priced first",
+  },
+  {
+    value: 5,
+    share: 5 / 8,
+    token: "--refused",
+    label: "verified, costed, and refused anyway",
+  },
+];
+
 const NAV = [
   { href: "/docs", label: "Language" },
   { href: "/signin", label: "Sign in" },
@@ -151,18 +167,50 @@ export default function Home() {
       <GlassFilters />
       <SmoothScroll />
 
-      <Glass as="header" variant="bar" className="sticky top-0 z-20 border-b border-line">
+      {/* Floating, and rounded. A square pane has no corner for the refraction
+          to bend around, so the filter had nothing to show; inset from the
+          edges it reads as a pane of glass lying over the page rather than as
+          a band welded to the top of it. */}
+      <header className="sticky top-0 z-30 px-3 pt-3 sm:px-5 sm:pt-4">
+        <Glass className="mx-auto w-full max-w-6xl rounded-2xl border border-white/[0.08]">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-5 py-3.5 sm:gap-6 sm:px-6">
           <Link
             href="/"
             className="group flex shrink-0 items-center gap-2.5 font-terminal text-[0.95rem] tracking-tight"
           >
-            <span
+            {/* Two chevrons closing on a bar: a program going in and coming
+                out smaller. Drawn rather than set in type, because an arrow
+                glyph in a box sat off-centre at every size. */}
+            <svg
               aria-hidden
-              className="grid h-6 w-6 place-items-center rounded border border-accent/35 bg-accent/10 text-[0.7rem] text-accent transition-all duration-200 group-hover:border-accent/70 group-hover:bg-accent/20"
+              viewBox="0 0 24 24"
+              className="h-[22px] w-[22px] shrink-0 overflow-visible"
+              fill="none"
             >
-              {"->"}
-            </span>
+              <path
+                d="M4 5 L10 12 L4 19"
+                stroke="var(--accent)"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="origin-center transition-transform duration-300 ease-out group-hover:translate-x-[2px]"
+              />
+              <path
+                d="M14 19 L20 12 L14 5"
+                stroke="var(--accent)"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="origin-center transition-transform duration-300 ease-out group-hover:-translate-x-[2px]"
+              />
+              <path
+                d="M12 8.5 L12 15.5"
+                stroke="var(--accent)"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                className="opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+              />
+            </svg>
             <span className="hidden font-semibold transition-colors duration-150 group-hover:text-accent xs:inline">
               autoopt
             </span>
@@ -195,13 +243,14 @@ export default function Home() {
             </Link>
           </nav>
         </div>
-      </Glass>
+        </Glass>
+      </header>
 
       <main className="relative z-10 mx-auto w-full max-w-6xl flex-1 px-6">
         {/* Five columns of claim against seven of evidence. The evidence is the
             wider half because it is the argument, not an illustration of it. */}
-        <section className="grid gap-14 py-16 lg:grid-cols-12 lg:gap-16 lg:py-28">
-          <div className="min-w-0 lg:sticky lg:top-24 lg:col-span-5 lg:self-start">
+        <section className="grid gap-16 py-16 lg:grid-cols-12 lg:gap-20 lg:py-32">
+          <div className="min-w-0 lg:sticky lg:top-28 lg:col-span-5 lg:self-start">
             <p className="font-terminal text-[0.78rem] uppercase tracking-[0.3em] text-muted">
               verified compiler optimization
             </p>
@@ -217,13 +266,13 @@ export default function Home() {
               />
             </h1>
 
-            <p className="mt-7 max-w-md text-pretty text-[1.02rem] leading-[1.65] text-muted">
+            <p className="mt-7 max-w-md text-pretty text-[1.05rem] leading-[1.75] text-muted">
               AutoOpt lowers a program to three-address code, looks for
               optimizations, and tests each one against the original before
               deciding. It refuses more than it keeps, and it writes down why.
             </p>
 
-            <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <div className="mt-11 flex flex-wrap items-center gap-x-6 gap-y-3">
               <Link
                 href="/try"
                 className="group inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 font-hero text-[0.95rem] font-bold tracking-[-0.01em] text-[#06120d] shadow-[0_0_0_0_var(--accent)] transition-[box-shadow,transform,filter] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_8px_28px_-8px_var(--accent)] hover:brightness-110"
@@ -250,19 +299,39 @@ export default function Home() {
               </Link>
             </div>
 
-            <dl className="mt-12 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
-              <div className="bg-accent-soft px-5 py-4 transition-colors duration-150 hover:bg-accent/10">
-                <dt className="font-terminal text-4xl tabular-nums text-accent">3</dt>
-                <dd className="mt-1.5 text-[0.82rem] leading-snug text-muted">
-                  rewrites kept in the run beside this
-                </dd>
-              </div>
-              <div className="bg-refused-soft px-5 py-4 transition-colors duration-150 hover:bg-refused/10">
-                <dt className="font-terminal text-4xl tabular-nums text-refused">5</dt>
-                <dd className="mt-1.5 text-[0.82rem] leading-snug text-muted">
-                  verified, costed, refused anyway
-                </dd>
-              </div>
+            <dl className="mt-14 grid gap-3 sm:grid-cols-2">
+              {TALLY.map((entry) => (
+                <Glass
+                  key={entry.label}
+                  className="group/tile relative overflow-hidden p-5"
+                >
+                  {/* A bar of the count, drawn to scale against the eight
+                      proposals that got as far as being costed. The number is
+                      the fact; this is how much of the run it was. */}
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-0 bottom-0 h-px origin-left transition-transform duration-500 ease-out"
+                    style={{
+                      background: `var(${entry.token})`,
+                      transform: `scaleX(${entry.share})`,
+                    }}
+                  />
+                  <dt className="flex items-baseline gap-2">
+                    <span
+                      className="font-terminal text-[2.6rem] leading-none tabular-nums transition-transform duration-300 ease-out group-hover/tile:-translate-y-0.5"
+                      style={{ color: `var(${entry.token})` }}
+                    >
+                      {entry.value}
+                    </span>
+                    <span className="font-terminal text-[0.78rem] text-muted">
+                      of 8
+                    </span>
+                  </dt>
+                  <dd className="mt-2.5 text-[0.86rem] leading-snug text-muted">
+                    {entry.label}
+                  </dd>
+                </Glass>
+              ))}
             </dl>
           </div>
 
@@ -296,42 +365,43 @@ export default function Home() {
         </Reveal>
 
         <Reveal className="border-t border-line py-24">
+          {/* The prose column stretched to nine hundred pixels against a code
+              panel of three hundred, because the three findings were stacked
+              inside it while the listing beside them is nine short lines. The
+              findings run underneath instead, where they have the full width
+              and sit directly under the lines they are about. */}
           <div className="grid items-start gap-10 lg:grid-cols-12 lg:gap-16">
-            <div className="min-w-0 lg:col-span-4">
+            <div className="min-w-0 lg:col-span-5">
               <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
                 <KineticHeading text="The program that run started from" className="cursor-default" />
               </h2>
-              <p className="mt-5 text-pretty text-[1rem] leading-[1.75] text-muted">
-                Nine lines, and two of them are doing nothing. The engine has to
-                find that from dataflow facts rather than from recognising the
-                shape, show each rewrite is safe, and price it before it may
+              <p className="mt-5 max-w-md text-pretty text-[1rem] leading-[1.75] text-muted">
+                Nine lines, and three of them are doing nothing. The engine has
+                to find that from dataflow facts rather than from recognising
+                the shape, show each rewrite is safe, and price it before it may
                 keep it.
               </p>
-              {/* A flex row stretches its children by default, which turned
-                  each token chip into a tall green box the height of the note
-                  beside it. They sit on their own line instead, and the note
-                  runs under rather than beside: at this column width a chip
-                  plus a paragraph left about twenty characters a line. */}
-              <dl className="mt-10 space-y-6">
-                {FINDINGS.map((finding) => (
-                  <div key={finding.token} className="border-l-2 border-accent/30 pl-4">
-                    <dt>
-                      <code className="rounded bg-accent/10 px-1.5 py-0.5 font-terminal text-[0.88rem] text-accent ring-1 ring-inset ring-accent/25">
-                        {finding.token}
-                      </code>
-                    </dt>
-                    <dd className="mt-2.5 text-pretty text-[0.95rem] leading-[1.7] text-muted">
-                      {finding.note}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
             </div>
 
-            <Glass className="min-w-0 p-6 lg:col-span-8">
+            <Glass className="min-w-0 p-6 lg:col-span-7">
               <Listing source={RECORDED_SOURCE} />
             </Glass>
           </div>
+
+          <dl className="mt-10 grid gap-8 sm:grid-cols-3">
+            {FINDINGS.map((finding) => (
+              <div key={finding.token} className="border-t-2 border-accent/30 pt-4">
+                <dt>
+                  <code className="rounded bg-accent/10 px-1.5 py-0.5 font-terminal text-[0.88rem] text-accent ring-1 ring-inset ring-accent/25">
+                    {finding.token}
+                  </code>
+                </dt>
+                <dd className="mt-3 text-pretty text-[0.95rem] leading-[1.7] text-muted">
+                  {finding.note}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </Reveal>
 
         <Reveal className="border-t border-line py-24">

@@ -275,7 +275,30 @@ export function RunTrajectory3D({
     // is occluded, and a chart that only ever paints inside it is a blank box
     // until the reader happens to look at it.
     render(performance.now());
-    raf = window.requestAnimationFrame(loop);
+
+    // Only animate while it is on screen. Two canvases redrawing sixty times a
+    // second for the whole length of the page, most of it with neither of them
+    // in view, was most of why scrolling felt heavy.
+    const start_ = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(loop);
+    };
+    const halt = () => {
+      window.cancelAnimationFrame(raf);
+      raf = 0;
+    };
+
+    const watcher = new IntersectionObserver(
+      ([entry]) => (entry.isIntersecting ? start_() : halt()),
+      { rootMargin: "120px" },
+    );
+    watcher.observe(canvas);
+
+    const onVisibility = () => {
+      if (document.hidden) halt();
+      else if (watcher.takeRecords().length === 0) start_();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     const onResize = () => {
       resize();
       render(performance.now());
@@ -283,6 +306,8 @@ export function RunTrajectory3D({
     window.addEventListener("resize", onResize);
     return () => {
       window.cancelAnimationFrame(raf);
+      watcher.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("resize", onResize);
     };
   }, [total]);

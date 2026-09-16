@@ -68,19 +68,18 @@ export function Backdrop() {
       </div>
 
       {/* Grain. Enough to stop the washes banding on an 8-bit panel, which is
-          what a large soft gradient on near-black does without it. */}
-      <svg className="absolute inset-0 h-full w-full opacity-[0.16]">
-        <filter id="landing-grain">
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.85"
-            numOctaves="3"
-            stitchTiles="stitch"
-          />
-          <feColorMatrix type="saturate" values="0" />
-        </filter>
-        <rect width="100%" height="100%" filter="url(#landing-grain)" />
-      </svg>
+          what a large soft gradient on near-black does without it. A tile
+          rather than an feTurbulence filter: the noise never changes, and a
+          filter over a full-screen rect is regenerated on every repaint of
+          that area. */}
+      <div
+        className="absolute inset-0 opacity-[0.14] mix-blend-overlay"
+        style={{
+          backgroundImage: "url(/grain.png)",
+          backgroundRepeat: "repeat",
+          backgroundSize: "128px 128px",
+        }}
+      />
     </div>
   );
 }
