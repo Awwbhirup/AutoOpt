@@ -306,12 +306,18 @@ def start_worker(
     )
 
 
-def run_batch() -> int:
+def run_batch(rotation: int = 0) -> int:
     """One burst across every configured key. Returns the worst exit code.
 
     Workers run together and are waited on together. The result reported is the
     least good of them, so a run where one key still has allowance and another
     does not is treated as the partial success it is rather than as finished.
+
+    Which key serves which slice shifts by one each burst. Slices are fixed, so
+    without that a key running out of allowance would strand its slice until
+    the next day while the other five sat idle with quota to spare. Rotating
+    means whatever is left of an exhausted key's slice is picked up by a key
+    that can still work.
     """
     keys = api_keys()
     shards = max(1, len(keys))
@@ -329,9 +335,8 @@ def run_batch() -> int:
             sink.write(f"\n--- worker {index} of {shards} started {stamp} ---\n")
             sink.flush()
             sinks.append(sink)
-            workers.append(
-                start_worker(index, shards, keys[index] if keys else "", sink)
-            )
+            key = keys[(index + rotation) % shards] if keys else ""
+            workers.append(start_worker(index, shards, key, sink))
 
         deadline = time.monotonic() + BATCH_TIMEOUT.total_seconds()
         codes = []
@@ -391,6 +396,7 @@ def supervise() -> int:
     # it from a supervisor that was killed rather than asked to stop.
     reap_orphans()
     barren = 0
+    rotation = 0
     log(f"supervisor started, {rows_done()} of {TARGET_ROWS} programs done")
 
     try:
@@ -407,7 +413,8 @@ def supervise() -> int:
                 continue
 
             log(f"starting a batch from {done} of {TARGET_ROWS}")
-            code = run_batch()
+            code = run_batch(rotation)
+            rotation += 1
             gained = rows_done() - done
 
             # Progress, not exit code, is what says whether this is working.
@@ -423,6 +430,17 @@ def supervise() -> int:
                 combine_shards()
 
             if code == 0:
+                if gained == 0:
+                    # Every worker had nothing it could do. Restarting at once
+                    # would spin: they would exit immediately again, and the
+                    # only thing spent would be a request each.
+                    log(
+                        f"nothing left that any key can reach; waiting {RETRY_AFTER_QUOTA}"
+                    )
+                    if barren >= BARREN_LIMIT:
+                        mark_stuck(barren, code)
+                    time.sleep(RETRY_AFTER_QUOTA.total_seconds())
+                    continue
                 log(f"batch finished cleanly, {gained} programs added")
                 continue
             if code == EXIT_QUOTA:
