@@ -34,6 +34,7 @@ import socket
 import subprocess
 import sys
 import time
+import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -56,7 +57,9 @@ BUDGET = int(os.environ.get("AUTOOPT_PASS_BUDGET", "0"))
 #: What this run's files are called. Normally the method, but one method run at
 #: several budgets is several runs writing several files, and they must not
 #: share a name, a lock or a log.
-TAG = os.environ.get("AUTOOPT_PASS_TAG") or (f"{METHOD}_b{BUDGET}" if BUDGET else METHOD)
+TAG = os.environ.get("AUTOOPT_PASS_TAG") or (
+    f"{METHOD}_b{BUDGET}" if BUDGET else METHOD
+)
 
 OUT = ROOT / "data" / "runs" / f"{TAG}.csv"
 LOG = ROOT / "data" / "runs" / f"{TAG}_pass.log"
@@ -316,6 +319,39 @@ def _programs_in(path: Path) -> set[str]:
         }
 
 
+def plan_batch(workers: int) -> dict[int, list[str]]:
+    """What each worker should do this batch: the remainder, shared out.
+
+    Both halves come from the engine rather than being worked out again here.
+    The corpus has one definition, and the split has one implementation, which
+    is what stops the supervisor and the workers disagreeing about either.
+
+    Imported inside the function because reading a log file does not need the
+    engine's dependencies, and --status is run by hand with whichever
+    interpreter is to hand.
+    """
+    sys.path.insert(0, str(ENGINE))
+    from autoopt.datagen import generate
+    from autoopt.experiment import select_limit, share_out
+
+    corpus = [program.program_id for program in select_limit(generate(), LIMIT or None)]
+    done = answered()
+    return share_out([program for program in corpus if program not in done], workers)
+
+
+def answered() -> set[str]:
+    """Programs with a row somewhere, across the combined file and every worker's."""
+    finished = _programs_in(OUT)
+    for index in range(max(1, len(api_keys()))):
+        finished |= _programs_in(shard_output(index))
+    return finished
+
+
+def worklist(index: int) -> Path:
+    """Where a worker is told what to do this batch."""
+    return OUT.with_name(f"{OUT.stem}_work{index}.txt")
+
+
 def rows_done() -> int:
     """Distinct programs finished, across the main file and every shard.
 
@@ -324,10 +360,7 @@ def rows_done() -> int:
     progress that does not exist. Counted as a set because a program answered by
     one worker must not be counted again when the files are merged.
     """
-    finished = _programs_in(OUT)
-    for index in range(len(api_keys())):
-        finished |= _programs_in(shard_output(index))
-    return len(finished)
+    return len(answered())
 
 
 def online(host: str = "api.groq.com", port: int = 443, timeout: float = 5.0) -> bool:
@@ -454,7 +487,10 @@ def batch_command(output: Path, shard: int, shards: int) -> list[str]:
     if BUDGET:
         command += ["--budgets", str(BUDGET)]
     if shards > 1:
-        command += ["--shards", str(shards), "--shard", str(shard)]
+        # An explicit list rather than --shard, so a worker's work can be
+        # decided from what is still missing when the batch starts instead of
+        # from a fraction of the corpus fixed before anything had run.
+        command += ["--programs", str(worklist(shard))]
     return command
 
 
@@ -499,19 +535,35 @@ def run_batch(rotation: int = 0) -> int:
     keys = api_keys()
     shards = max(1, len(keys))
     BATCH_LOG.parent.mkdir(parents=True, exist_ok=True)
-    seed_shards()
     stamp = f"{datetime.now().astimezone():%Y-%m-%d %H:%M:%S %z}"
+
+    plan = plan_batch(shards)
+    pending = sum(len(assigned) for assigned in plan.values())
+    for index, assigned in plan.items():
+        worklist(index).write_text("\n".join(assigned), encoding="utf-8")
+    log(
+        f"sharing {pending} programs across {sum(1 for a in plan.values() if a)} workers"
+    )
 
     sinks = []
     workers = []
+    started: list[int] = []
     try:
         for index in range(shards):
+            # Nothing to do is a reason not to start, not a worker that exits
+            # immediately: an empty run still spends a request finding out.
+            if shards > 1 and not plan[index]:
+                continue
             sink = batch_log(index, shards).open(
                 "a", encoding="utf-8", errors="replace"
             )
-            sink.write(f"\n--- worker {index} of {shards} started {stamp} ---\n")
+            sink.write(
+                f"\n--- worker {index} of {shards} started {stamp}, "
+                f"{len(plan[index])} programs ---\n"
+            )
             sink.flush()
             sinks.append(sink)
+            started.append(index)
             key = keys[(index + rotation) % shards] if keys else ""
             workers.append(start_worker(index, shards, key, sink))
 
@@ -523,6 +575,7 @@ def run_batch(rotation: int = 0) -> int:
                 codes.append(worker.wait(timeout=remaining))
             except subprocess.TimeoutExpired:
                 sinks[index].write("\n--- killed: over its time limit ---\n")
+                log(f"worker {started[index]} went over its time limit")
                 worker.kill()
                 worker.wait()
                 codes.append(EXIT_TIMEOUT)
@@ -639,44 +692,6 @@ def supervise() -> int:
         return 130
     finally:
         LOCK.unlink(missing_ok=True)
-
-
-def seed_shards() -> None:
-    """Tell each worker what has already been answered.
-
-    A worker resumes from its own output file and nothing else, so a fresh
-    shard file means a fresh start: the first parallel run redid all 129
-    programs the single-key pass had already finished, because none of the six
-    had any way to know about them.
-
-    Giving every shard a copy of what is already done costs some duplicated
-    rows on disk and saves re-answering them. Extra rows are harmless, since a
-    worker only ever works on its own slice and the merge keys on program id.
-    """
-    keys = api_keys()
-    if len(keys) < 2 or not OUT.exists():
-        return
-
-    with OUT.open(encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        done_rows = list(reader)
-        fields = reader.fieldnames or []
-    if not done_rows:
-        return
-
-    for index in range(len(keys)):
-        path = shard_output(index)
-        present = _programs_in(path)
-        missing = [row for row in done_rows if row["program_id"] not in present]
-        if not missing:
-            continue
-        exists = path.exists()
-        with path.open("a" if exists else "w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=fields)
-            if not exists:
-                writer.writeheader()
-            writer.writerows(missing)
-        log(f"told worker {index} about {len(missing)} programs already done")
 
 
 def combine_shards() -> int:
@@ -901,5 +916,24 @@ def main() -> int:
     return supervise()
 
 
+def guarded() -> int:
+    """main, with anywhere-else-to-put-it for a crash.
+
+    The supervisor is started windowless so nothing pops up while it works,
+    which also means it has no console for a traceback: it has twice now
+    vanished mid-run leaving a decision log that simply stops, which reads
+    exactly like the machine being asleep. Writing the traceback where the
+    decisions go makes the difference visible.
+    """
+    try:
+        return main()
+    except KeyboardInterrupt:
+        log("stopped by hand")
+        return 0
+    except BaseException:
+        log("supervisor crashed: " + traceback.format_exc().rstrip())
+        raise
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(guarded())

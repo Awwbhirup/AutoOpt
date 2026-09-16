@@ -135,6 +135,10 @@ def experiment(
     fallback: Annotated[
         bool, typer.Option(help="Allow falling back to the next LLM provider mid-run")
     ] = True,
+    programs: Annotated[
+        Path | None,
+        typer.Option(help="File of program ids, one per line; overrides --shard"),
+    ] = None,
 ) -> None:
     """Run the method x category grid and write the master CSV."""
     _load_env()
@@ -166,6 +170,18 @@ def experiment(
     caps = tuple(int(b.strip()) or None for b in budgets.split(","))
     console.print(f"budgets: {', '.join(str(b or 'unconstrained') for b in caps)}")
 
+    only: list[str] | None = None
+    if programs is not None:
+        if not programs.exists():
+            console.print(f"[red]no such program list: {programs}[/red]")
+            raise typer.Exit(1)
+        only = [
+            line.strip()
+            for line in programs.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        console.print(f"programs: {len(only)} named in {programs.name}")
+
     try:
         state = run_experiment(
             out,
@@ -177,6 +193,7 @@ def experiment(
             budgets=caps,
             shard=shard,
             shards=shards,
+            only=only,
             on_progress=progress,
         )
     except ProviderExhaustedError as error:

@@ -106,8 +106,10 @@ def run_cell(budget: int) -> int:
             stderr=sink,
             check=False,
         )
-    log(f"budget {budget}: supervisor exited {result.returncode}, "
-        f"{rows_in(cell_output(budget))} programs answered")
+    log(
+        f"budget {budget}: supervisor exited {result.returncode}, "
+        f"{rows_in(cell_output(budget))} programs answered"
+    )
     return result.returncode
 
 
@@ -147,7 +149,9 @@ def status() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--status", action="store_true", help="what is done and what is left")
+    parser.add_argument(
+        "--status", action="store_true", help="what is done and what is left"
+    )
     args = parser.parse_args()
     if args.status:
         return status()

@@ -10,7 +10,9 @@ from autoopt.experiment import (
     ConcurrentRunError,
     _exclusive,
     run_experiment,
+    select_named,
     select_shard,
+    share_out,
 )
 
 
@@ -148,3 +150,65 @@ def test_a_shard_outside_the_run_is_refused(tmp_path: Path) -> None:
 
 def test_one_shard_of_one_is_the_whole_corpus() -> None:
     assert shard_programs(1, 0) == [p.program_id for p in generate()]
+
+
+def test_sharing_out_loses_nothing_and_repeats_nothing() -> None:
+    """Every pending program goes to exactly one worker.
+
+    The same requirement the shards have, and for the same reasons: an overlap
+    spends quota twice for one row, a gap leaves a hole nothing reports.
+    """
+    pending = [p.program_id for p in generate()][:137]
+    for workers in (1, 2, 5, 9):
+        plan = share_out(pending, workers)
+        combined = [pid for assigned in plan.values() for pid in assigned]
+        assert sorted(combined) == sorted(pending), f"{workers} workers lost or repeated work"
+        assert len(set(combined)) == len(combined)
+
+
+def test_sharing_out_is_level() -> None:
+    """No worker gets more than one program more than any other.
+
+    The point of recomputing the split each batch is that the run goes at the
+    speed of every key rather than the speed of the slowest slice, which only
+    holds if the shares are the same size.
+    """
+    pending = [p.program_id for p in generate()][:137]
+    sizes = [len(assigned) for assigned in share_out(pending, 9).values()]
+    assert max(sizes) - min(sizes) <= 1
+
+
+def test_the_last_programs_go_to_separate_workers() -> None:
+    """Eight programs left and nine keys means eight workers, not two.
+
+    This is the case that made the change worth making: the fixed slices left
+    the last of the corpus with two workers while seven sat idle.
+    """
+    plan = share_out([p.program_id for p in generate()][:8], 9)
+    assert sum(1 for assigned in plan.values() if assigned) == 8
+    assert all(len(assigned) <= 1 for assigned in plan.values())
+
+
+def test_every_worker_is_told_even_when_it_has_nothing() -> None:
+    """An absent entry and an empty one read the same to a caller that indexes."""
+    plan = share_out([], 9)
+    assert sorted(plan) == list(range(9))
+    assert all(assigned == [] for assigned in plan.values())
+
+
+def test_naming_programs_selects_exactly_those() -> None:
+    wanted = ["loops_003", "arithmetic_000", "mixed_010"]
+    taken = [p.program_id for p in select_named(generate(), wanted)]
+    # Corpus order, not the order asked for: the run order is the corpus's.
+    assert taken == [p.program_id for p in generate() if p.program_id in set(wanted)]
+    assert sorted(taken) == sorted(wanted)
+
+
+def test_a_program_that_does_not_exist_is_an_error() -> None:
+    """Rather than a shorter run that looks like it finished.
+
+    The lists are generated, so a name matching nothing means the generator and
+    whatever wrote the list disagree about the corpus.
+    """
+    with pytest.raises(ValueError, match="nonsense_999"):
+        select_named(generate(), ["arithmetic_000", "nonsense_999"])

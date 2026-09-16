@@ -16,7 +16,7 @@ import os
 import subprocess
 import time
 import traceback
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -197,6 +197,7 @@ def run_experiment(
     budgets: tuple[int | None, ...] = (None,),
     shard: int = 0,
     shards: int = 1,
+    only: Collection[str] | None = None,
     on_progress: Callable[[BatchProgress, dict[str, object]], None] | None = None,
 ) -> BatchProgress:
     """Run every (program, method) cell and append rows as they finish."""
@@ -211,6 +212,7 @@ def run_experiment(
             budgets=budgets,
             shard=shard,
             shards=shards,
+            only=only,
             on_progress=on_progress,
         )
 
@@ -219,9 +221,7 @@ class ConcurrentRunError(RuntimeError):
     """Another run already owns this output file."""
 
 
-def select_limit(
-    corpus: list[GeneratedProgram], limit: int | None
-) -> list[GeneratedProgram]:
+def select_limit(corpus: list[GeneratedProgram], limit: int | None) -> list[GeneratedProgram]:
     """The first `limit` programs of each category, or all of them.
 
     Per category rather than the first N overall, so a reduced run still covers
@@ -243,6 +243,28 @@ def select_limit(
     return selected
 
 
+def select_named(corpus: list[GeneratedProgram], names: Collection[str]) -> list[GeneratedProgram]:
+    """Exactly the programs named, in corpus order.
+
+    An explicit list is how work is handed out when what is left is no longer a
+    fixed fraction of the corpus. A strided shard is decided before the run
+    starts and cannot narrow: once a worker has finished its stride it has
+    nothing to do, however much is left elsewhere. A list can be recomputed from
+    what is still missing, so every worker gets a share of the remainder.
+
+    A name that is not in the corpus is an error rather than an omission. The
+    lists are generated, so a name that matches nothing means the generator and
+    the caller disagree about what the corpus is, and running a shorter list
+    than asked for would hide that behind a run that looked complete.
+    """
+    wanted = set(names)
+    selected = [program for program in corpus if program.program_id in wanted]
+    missing = wanted - {program.program_id for program in selected}
+    if missing:
+        raise ValueError(f"not in the corpus: {', '.join(sorted(missing))}")
+    return selected
+
+
 def select_shard(corpus: list[GeneratedProgram], shard: int, shards: int) -> list[GeneratedProgram]:
     """The slice of the corpus one worker takes.
 
@@ -258,6 +280,33 @@ def select_shard(corpus: list[GeneratedProgram], shard: int, shards: int) -> lis
     if shards <= 1:
         return corpus
     return [program for index, program in enumerate(corpus) if index % shards == shard]
+
+
+def share_out(pending: list[str], workers: int) -> dict[int, list[str]]:
+    """Split the programs still missing between the workers.
+
+    Strided, for the same reason select_shard is: each worker gets the same mix
+    of categories and sizes rather than one of them getting every large program
+    and running long after the rest have stopped.
+
+    The difference from select_shard is when it is decided. A shard is a
+    fraction of the whole corpus, fixed before anything has run, so a worker
+    that finishes its fraction has nothing left to do however much is missing
+    elsewhere; a run then goes at the speed of its slowest shard rather than
+    the speed of all its keys. This takes what is still missing and shares that
+    out, so the work is level again at the start of every batch and the last
+    eight programs go to eight workers rather than to two.
+
+    Every worker gets a key, so every worker gets an entry, including the empty
+    ones: a caller deciding whether to start a worker needs to be told it has
+    nothing to do rather than have to notice it is absent.
+    """
+    if workers <= 1:
+        return {0: list(pending)}
+    return {
+        index: [item for position, item in enumerate(pending) if position % workers == index]
+        for index in range(workers)
+    }
 
 
 def _holder_gone(held: str) -> bool:
@@ -345,6 +394,7 @@ def _run_experiment(
     budgets: tuple[int | None, ...] = (None,),
     shard: int = 0,
     shards: int = 1,
+    only: Collection[str] | None = None,
     on_progress: Callable[[BatchProgress, dict[str, object]], None] | None = None,
 ) -> BatchProgress:
     if not 0 <= shard < shards:
@@ -352,7 +402,11 @@ def _run_experiment(
     corpus = generate()
     corpus = select_limit(corpus, limit)
 
-    corpus = select_shard(corpus, shard, shards)
+    # A named list wins over a stride. They answer the same question, but the
+    # list is recomputed from what is still missing while the stride was fixed
+    # before the run began, so taking both would silently intersect them and
+    # give the worker less than either.
+    corpus = select_named(corpus, only) if only is not None else select_shard(corpus, shard, shards)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     done = _completed_cells(output) if resume else set()

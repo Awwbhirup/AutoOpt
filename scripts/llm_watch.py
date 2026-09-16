@@ -51,15 +51,11 @@ else:
         os.environ["AUTOOPT_PASS_TAG"] = _live
         # The target row count comes from the limit, and the limit is not
         # written down anywhere except the running supervisor's environment.
-        # Infer it from what that arm's workers were told.
+        # Infer it from what that run's workers were told.
         os.environ.setdefault("AUTOOPT_PASS_LIMIT", str(_probe.running_limit(_live)))
     del sys.modules["llm_pass"]
 
 import llm_pass as pass_
-
-sys.path.insert(0, str(pass_.ENGINE))
-from autoopt.datagen import generate
-from autoopt.experiment import select_limit, select_shard
 
 REFRESH_SECONDS = 2.0
 #: How often to ask a key what it has left. Rare, because asking costs a request
@@ -69,6 +65,10 @@ QUOTA_EVERY = 60.0
 #: worker running out of allowance shows up as a slowdown within a minute or two
 #: instead of being hidden behind a good first hour.
 RATE_WINDOW_SECONDS = 180.0
+#: How much of a worker's log to read to find what it is on. Progress lines are
+#: short and the one wanted is the last, so this only has to be generous enough
+#: to clear a summary table or a traceback.
+LOG_TAIL_BYTES = 4096
 
 ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -90,36 +90,64 @@ class Watcher:
     history: deque[tuple[float, int]] = field(default_factory=lambda: deque(maxlen=400))
     started_at: float = field(default_factory=time.monotonic)
     started_done: int = 0
-    #: Which programs belong to which worker. Asked of the engine so the split
-    #: shown here is the split actually being run, not a second guess at it.
-    slices: dict[int, set[str]] = field(default_factory=dict)
-    started_per_shard: dict[int, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.keys = pass_.api_keys()
         self.started_done = pass_.rows_done()
-        shards = max(1, len(self.keys))
-        # Limited the same way the run is, before sharding, or the slices
-        # shown would be of the whole corpus while the workers are on a
-        # subset of it.
-        corpus = select_limit(generate(), pass_.LIMIT or None)
-        for index in range(shards):
+        for index in range(max(1, len(self.keys))):
             self.quotas[index] = Quota()
-            self.slices[index] = {
-                program.program_id for program in select_shard(corpus, index, shards)
-            }
-            self.started_per_shard[index] = self.answered_by(index)
+
+    # --- what each worker was given ------------------------------------------
+
+    def assigned(self, index: int) -> list[str]:
+        """The programs this worker was handed when the batch started.
+
+        Read from the file the supervisor wrote rather than worked out again
+        here. The split is recomputed from what is still missing every batch, so
+        a second implementation of it would be right only until a worker ran out
+        of allowance, which is exactly when this is worth looking at.
+        """
+        try:
+            return [
+                line.strip()
+                for line in pass_.worklist(index)
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if line.strip()
+            ]
+        except OSError:
+            return []
 
     def answered_by(self, index: int) -> int:
-        """Programs from this worker's own slice that are done.
-
-        Counted against the slice rather than the file, because every shard
-        file is seeded with the whole backlog so a worker can skip it. The file
-        length would read the same for all six and say nothing.
-        """
+        """How much of this worker's batch is finished."""
         shard_file = pass_.shard_output(index) if len(self.keys) > 1 else pass_.OUT
-        answered = pass_._programs_in(shard_file) | pass_._programs_in(pass_.OUT)
-        return len(answered & self.slices[index])
+        done = pass_._programs_in(shard_file) | pass_._programs_in(pass_.OUT)
+        return len(done & set(self.assigned(index)))
+
+    def working_on(self, index: int) -> str:
+        """The program this worker last reported starting, from its own log.
+
+        The counts only move when a program finishes, so a worker three minutes
+        into a large one looks exactly like a worker that has died. This is the
+        difference between them, and it costs one tail read.
+        """
+        log = pass_.batch_log(index, max(1, len(self.keys)))
+        try:
+            with log.open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                handle.seek(max(0, handle.tell() - LOG_TAIL_BYTES))
+                tail = handle.read().decode("utf-8", "replace")
+        except OSError:
+            return ""
+
+        # A progress line starts with a count and ends with the program and the
+        # method. Everything else in the file is a summary table, a banner or a
+        # traceback, and names neither.
+        for line in reversed(tail.splitlines()):
+            parts = line.split()
+            if len(parts) >= 2 and parts[-1] == pass_.METHOD and "/" in parts[0]:
+                return parts[-2]
+        return ""
 
     # --- numbers -------------------------------------------------------------
 
@@ -142,7 +170,10 @@ class Watcher:
         if remaining <= 0:
             return "done"
         if rate <= 0:
-            return "stalled"
+            # Not the same as stopped, and calling it stalled made it look that
+            # way. The last programs of the corpus are its largest and take
+            # minutes each, so an empty window is how a run normally ends.
+            return f"nothing finished in {RATE_WINDOW_SECONDS / 60:.0f} min"
         minutes = remaining / rate
         if minutes < 90:
             return f"{minutes:.0f} min"
@@ -152,6 +183,9 @@ class Watcher:
 
     def refresh_quotas(self) -> None:
         """One thread, so a slow provider never freezes the display."""
+        model = pass_.arm_model() or os.environ.get(
+            "AUTOOPT_GROQ_MODEL", "qwen/qwen3.8-27b"
+        )
         for index, key in enumerate(self.keys):
             quota = self.quotas[index]
             try:
@@ -159,9 +193,7 @@ class Watcher:
                     ENDPOINT,
                     headers={"Authorization": f"Bearer {key}"},
                     json={
-                        "model": os.environ.get(
-                            "AUTOOPT_GROQ_MODEL", "qwen/qwen3.8-27b"
-                        ),
+                        "model": model,
                         "messages": [{"role": "user", "content": "hi"}],
                         "max_tokens": 1,
                     },
@@ -197,15 +229,15 @@ class Watcher:
 
         table = Table(box=None, pad_edge=False, header_style="dim")
         table.add_column("worker", justify="right")
-        table.add_column("its slice", justify="right")
-        table.add_column("added", justify="right")
+        table.add_column("this batch", justify="right")
         table.add_column("requests left", justify="right")
         table.add_column("", justify="left")
+        table.add_column("on", justify="left")
 
+        idle = 0
         for index in range(shards):
-            answered = self.answered_by(index)
-            slice_size = len(self.slices[index])
-            gained_here = answered - self.started_per_shard.get(index, 0)
+            given = len(self.assigned(index))
+            finished_here = self.answered_by(index)
             quota = self.quotas.get(index, Quota())
 
             if quota.trouble:
@@ -221,16 +253,26 @@ class Watcher:
 
             age = time.monotonic() - quota.checked_at if quota.checked_at else None
             age_text = Text(f"{age:.0f}s ago" if age else "", style="dim")
-            finished = answered >= slice_size
-            progress = Text(
-                f"{answered} / {slice_size}", style="green" if finished else "white"
-            )
+
+            if given == 0:
+                idle += 1
+                progress = Text("nothing to do", style="dim")
+                here = ""
+            else:
+                complete = finished_here >= given
+                if complete:
+                    idle += 1
+                progress = Text(
+                    f"{finished_here} / {given}", style="green" if complete else "white"
+                )
+                here = "" if complete else self.working_on(index)
+
             table.add_row(
                 str(index),
                 progress,
-                Text(f"+{gained_here}" if gained_here else "", style="dim"),
                 left,
                 age_text,
+                Text(here, style="cyan" if here else "dim"),
             )
 
         gained = done - self.started_done
@@ -249,6 +291,10 @@ class Watcher:
         state.append(
             "running" if running else "NOT RUNNING", style="green" if running else "red"
         )
+        if idle and remaining > 0:
+            # Worth saying: the point of sharing out what is left is that this
+            # should be zero until there is less work than there are workers.
+            state.append(f"   {idle} of {shards} idle", style="dim")
         if pass_.STUCK.exists():
             state.append("   NOT PROGRESSING: ", style="bold red")
             state.append(
