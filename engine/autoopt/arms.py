@@ -34,6 +34,15 @@ LLM_ARMS: dict[str, str] = {
     #: the assumption the plan was built on: that a mid-sized model leaves
     #: a validity rate worth analysing where a strong one flattens it.
     "llm_large": "openai/gpt-oss-120b",
+    #: The same family as llm_large, six times smaller. There because the first
+    #: two arms answered the size question with a model from another family, so
+    #: they varied size and family at once and could not tell the two apart:
+    #: their validity rates matched to within a tenth of a point, which is what
+    #: two effects cancelling looks like as well as what no effect looks like.
+    #:
+    #: Against llm_large this is size with the family held fixed; against llm it
+    #: is family at roughly matched size. Neither contrast exists without it.
+    "llm_small": "openai/gpt-oss-20b",
 }
 
 

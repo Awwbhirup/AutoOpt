@@ -339,6 +339,13 @@ def _holder_gone(held: str) -> bool:
         os.kill(pid, 0)
     except ProcessLookupError:
         return True
+    except (OverflowError, ValueError):
+        # A number too large to be a pid at all. os.kill parses into a C int
+        # here, so a lock naming one raises rather than reporting no such
+        # process, and a corrupt lock would then be as permanent as the stale
+        # one this function exists to clear. Nothing that cannot be a pid is
+        # holding anything.
+        return True
     except PermissionError:
         # Alive, just owned by someone else.
         return False

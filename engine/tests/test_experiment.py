@@ -9,6 +9,7 @@ from autoopt.datagen import generate
 from autoopt.experiment import (
     ConcurrentRunError,
     _exclusive,
+    _holder_gone,
     run_experiment,
     select_named,
     select_shard,
@@ -69,13 +70,33 @@ def test_a_lock_from_a_dead_process_is_taken_over(tmp_path: Path) -> None:
     lock = output.with_suffix(output.suffix + ".lock")
     lock.parent.mkdir(parents=True, exist_ok=True)
     # A pid that cannot be running: the kernel would have to have handed out a
-    # number above its own maximum.
+    # number above its own maximum. Also wider than the C int os.kill parses
+    # into on Linux, which is a second way for this to not be a live holder and
+    # was for ten commits a way to fail on one platform and pass on the other.
     lock.write_text("4294967294", encoding="utf-8")
 
     progress = run_experiment(output, methods=("greedy",), limit=1, prove_final=False)
 
     # One program per category, so the count is the number of categories. What
     # matters is that it ran at all rather than refusing.
+    assert progress.completed == progress.total > 0
+    assert not lock.exists()
+
+
+def test_a_lock_naming_a_plausible_dead_pid_is_taken_over(tmp_path: Path) -> None:
+    """The ordinary stale lock, inside the range a pid can actually take.
+
+    Separate from the out-of-range one because they fail differently: this asks
+    the OS and is told no such process, that one cannot be asked at all.
+    """
+    output = tmp_path / "runs.csv"
+    lock = output.with_suffix(output.suffix + ".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    # Claimed, never released, and long gone: the pid is in range but there is
+    # no such process on either platform.
+    lock.write_text("4194303", encoding="utf-8")
+
+    progress = run_experiment(output, methods=("greedy",), limit=1, prove_final=False)
     assert progress.completed == progress.total > 0
     assert not lock.exists()
 
@@ -91,6 +112,32 @@ def test_a_lock_held_by_a_live_process_is_respected(tmp_path: Path) -> None:
         run_experiment(output, methods=("greedy",), limit=1, prove_final=False)
 
     assert lock.exists(), "a live holder's lock must survive the refusal"
+
+
+def test_a_pid_too_wide_to_be_one_is_gone_on_posix(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The posix branch, exercised from whichever platform is running this.
+
+    os.kill parses its pid into a C int there, so a lock naming a number wider
+    than one raises instead of reporting no such process. Only Linux reached
+    that line, so the suite passed here and failed in CI for ten commits with
+    nothing in the local run to show for it. Forcing the branch is what stops
+    that happening again.
+    """
+    monkeypatch.setattr(os, "name", "posix")
+
+    def kill(pid: int, signal: int) -> None:
+        if pid > 2**31 - 1:
+            raise OverflowError("Python int too large to convert to C int")
+        raise ProcessLookupError
+
+    monkeypatch.setattr(os, "kill", kill)
+
+    assert _holder_gone("4294967294"), "a number that cannot be a pid holds nothing"
+    assert _holder_gone("4194303"), "no such process"
+    assert _holder_gone("not a pid")
+
+    monkeypatch.setattr(os, "kill", lambda pid, signal: None)
+    assert not _holder_gone("4194303"), "a live holder keeps its lock"
 
 
 def test_an_unreadable_lock_is_not_permanent(tmp_path: Path) -> None:
