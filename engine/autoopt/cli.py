@@ -122,6 +122,13 @@ def experiment(
     seed: int = 0,
     prove: Annotated[bool, typer.Option(help="Prove original against final with Z3")] = True,
     resume: bool = True,
+    shards: Annotated[
+        int,
+        typer.Option(
+            help="Split the corpus across this many workers, each with its own output file"
+        ),
+    ] = 1,
+    shard: Annotated[int, typer.Option(help="Which slice this worker takes, from 0")] = 0,
     budgets: Annotated[
         str, typer.Option(help="Node budgets, comma separated; 0 for unconstrained")
     ] = "0",
@@ -168,6 +175,8 @@ def experiment(
             prove_final=prove,
             resume=resume,
             budgets=caps,
+            shard=shard,
+            shards=shards,
             on_progress=progress,
         )
     except ProviderExhaustedError as error:

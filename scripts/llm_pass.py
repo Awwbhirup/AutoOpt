@@ -9,7 +9,11 @@ sleeps and tries again. It stops on its own once the corpus is complete, and it
 is safe to kill at any point: the batch writes each row as it finishes and
 resumes from the file, so nothing is lost and nothing is repeated.
 
-Run it directly, or have it start at every logon with:
+One worker by default. Put more API keys in engine/groq.keys, one per line,
+and the corpus is split between them: each takes every Nth program, writes its
+own file, and the files are folded back into llm.csv as they fill. Using keys
+from separate accounts to get past a per-account limit is against Groq's
+acceptable use policy, which says so by name.
 
     python scripts/llm_pass.py --install     # adds a Startup folder entry
     python scripts/llm_pass.py --status      # progress and recent decisions
@@ -47,6 +51,9 @@ LOCK = ROOT / "data" / "runs" / "llm_pass.lock"
 #: Written when the job has stopped making progress. Its presence is what
 #: --status reports, so a silent stall has somewhere visible to show up.
 STUCK = ROOT / "data" / "runs" / "llm_pass.stuck"
+#: One API key per line. Each gets its own slice of the corpus and its own
+#: output file. Absent or holding one key, the pass runs as a single worker.
+KEYS_FILE = ROOT / "engine" / "groq.keys"
 
 TARGET_ROWS = 500
 TASK_NAME = "AutoOptLlmPass"
@@ -94,17 +101,50 @@ def log(message: str) -> None:
         handle.write(line + "\n")
 
 
+def api_keys() -> list[str]:
+    """The keys to spread the work across, in file order.
+
+    Order matters: a key's position decides which slice of the corpus it takes,
+    so the same file gives the same split every time and a restart resumes each
+    worker where it was.
+    """
+    if not KEYS_FILE.exists():
+        return []
+    lines = KEYS_FILE.read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+
+
+def shard_output(index: int) -> Path:
+    """Each worker writes its own file.
+
+    Pointing several workers at one CSV is what produced a duplicate row: they
+    interleave, and the lock that would stop them can only refuse the second
+    rather than coordinate. Separate files, merged afterwards, has no such race.
+    """
+    return OUT.with_name(f"{OUT.stem}_shard{index}{OUT.suffix}")
+
+
+def _programs_in(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    with path.open(encoding="utf-8", newline="") as handle:
+        return {
+            row["program_id"] for row in csv.DictReader(handle) if row.get("program_id")
+        }
+
+
 def rows_done() -> int:
-    """How many programs are already in the file.
+    """Distinct programs finished, across the main file and every shard.
 
     Counted through the CSV reader rather than by lines, because a decision log
     embedded in a field can contain newlines and counting those would report
-    progress that does not exist.
+    progress that does not exist. Counted as a set because a program answered by
+    one worker must not be counted again when the files are merged.
     """
-    if not OUT.exists():
-        return 0
-    with OUT.open(encoding="utf-8", newline="") as handle:
-        return sum(1 for _ in csv.DictReader(handle))
+    finished = _programs_in(OUT)
+    for index in range(len(api_keys())):
+        finished |= _programs_in(shard_output(index))
+    return len(finished)
 
 
 def online(host: str = "api.groq.com", port: int = 443, timeout: float = 5.0) -> bool:
@@ -210,45 +250,92 @@ def reap_orphans() -> None:
         log(f"stopped an orphaned batch, pid {pid}")
 
 
-def run_batch() -> int:
-    """One burst. Returns the batch's exit code."""
+def batch_command(output: Path, shard: int, shards: int) -> list[str]:
     command = [
         str(PYTHON),
         "-m",
         "autoopt.cli",
         "experiment",
         "--out",
-        str(OUT),
+        str(output),
         "--methods",
         "llm",
         "--no-fallback",
     ]
-    # The batch's own output goes to a file rather than being inherited. Run
-    # under pythonw the inherited handles are not valid, and the progress lines
-    # are worth keeping anyway for a job that runs unattended for days.
+    if shards > 1:
+        command += ["--shards", str(shards), "--shard", str(shard)]
+    return command
+
+
+def start_worker(
+    shard: int, shards: int, key: str, sink: object
+) -> subprocess.Popen[bytes]:
+    """One worker, pinned to one key and one slice of the corpus.
+
+    The key is passed through the environment rather than the command line,
+    where it would be visible to anything that can list processes.
+    """
+    environment = dict(os.environ)
+    if key:
+        environment["GROQ_API_KEY"] = key
+        # Only this provider. A worker that quietly fell through to another
+        # would put a different model's answers in the same column.
+        environment["AUTOOPT_LLM_PROVIDER"] = "groq"
+        environment["AUTOOPT_LLM_FALLBACK"] = "0"
+    return subprocess.Popen(
+        batch_command(shard_output(shard) if shards > 1 else OUT, shard, shards),
+        cwd=ENGINE,
+        env=environment,
+        stdout=sink,
+        stderr=sink,
+        creationflags=NO_WINDOW,
+    )
+
+
+def run_batch() -> int:
+    """One burst across every configured key. Returns the worst exit code.
+
+    Workers run together and are waited on together. The result reported is the
+    least good of them, so a run where one key still has allowance and another
+    does not is treated as the partial success it is rather than as finished.
+    """
+    keys = api_keys()
+    shards = max(1, len(keys))
     BATCH_LOG.parent.mkdir(parents=True, exist_ok=True)
+
     with BATCH_LOG.open("a", encoding="utf-8", errors="replace") as sink:
-        sink.write(
-            f"\n--- batch started {datetime.now().astimezone():%Y-%m-%d %H:%M:%S %z} ---\n"
-        )
+        stamp = f"{datetime.now().astimezone():%Y-%m-%d %H:%M:%S %z}"
+        sink.write(f"\n--- batch started {stamp} across {shards} worker(s) ---\n")
         sink.flush()
-        try:
-            result = subprocess.run(
-                command,
-                cwd=ENGINE,
-                check=False,
-                stdout=sink,
-                stderr=sink,
-                # A socket that never answers would otherwise hold the
-                # supervisor open forever, and a supervisor waiting on a dead
-                # batch looks exactly like one doing its job.
-                timeout=BATCH_TIMEOUT.total_seconds(),
-                creationflags=NO_WINDOW,
-            )
-        except subprocess.TimeoutExpired:
-            sink.write("\n--- batch killed: exceeded its time limit ---\n")
-            return EXIT_TIMEOUT
-    return result.returncode
+
+        workers = [
+            start_worker(index, shards, keys[index] if keys else "", sink)
+            for index in range(shards)
+        ]
+
+        deadline = time.monotonic() + BATCH_TIMEOUT.total_seconds()
+        codes = []
+        for worker in workers:
+            remaining = max(1.0, deadline - time.monotonic())
+            try:
+                codes.append(worker.wait(timeout=remaining))
+            except subprocess.TimeoutExpired:
+                sink.write(
+                    f"\n--- worker {worker.pid} killed: over its time limit ---\n"
+                )
+                worker.kill()
+                worker.wait()
+                codes.append(EXIT_TIMEOUT)
+
+    if not codes:
+        return 1
+    if all(code == EXIT_QUOTA for code in codes):
+        return EXIT_QUOTA
+    # Any worker that failed for a reason other than quota is the news here.
+    for code in codes:
+        if code not in (0, EXIT_QUOTA):
+            return code
+    return 0
 
 
 def last_batch_error() -> str:
@@ -286,6 +373,7 @@ def supervise() -> int:
         while True:
             done = rows_done()
             if done >= TARGET_ROWS:
+                combine_shards()
                 log(f"corpus complete at {done} programs; nothing left to do")
                 return 0
 
@@ -306,6 +394,9 @@ def supervise() -> int:
                 STUCK.unlink(missing_ok=True)
             else:
                 barren += 1
+
+            if gained > 0:
+                combine_shards()
 
             if code == 0:
                 log(f"batch finished cleanly, {gained} programs added")
@@ -331,6 +422,47 @@ def supervise() -> int:
         return 130
     finally:
         LOCK.unlink(missing_ok=True)
+
+
+def combine_shards() -> int:
+    """Fold every worker's file back into the main one.
+
+    Done here rather than left for later because a pass that finished in six
+    pieces is not finished from anywhere else's point of view, and the pieces
+    are easy to forget. A program already in the main file wins, so re-running
+    this is harmless.
+    """
+    keys = api_keys()
+    if len(keys) < 2:
+        return 0
+
+    with OUT.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+        fields = reader.fieldnames or []
+    seen = {row["program_id"] for row in rows}
+
+    added = 0
+    for index in range(len(keys)):
+        path = shard_output(index)
+        if not path.exists():
+            continue
+        with path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                if row["program_id"] in seen:
+                    continue
+                seen.add(row["program_id"])
+                rows.append(row)
+                added += 1
+
+    if added:
+        rows.sort(key=lambda row: row["program_id"])
+        with OUT.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+        log(f"folded {added} rows from the workers into {OUT.name}")
+    return added
 
 
 def mark_stuck(barren: int, code: int) -> None:

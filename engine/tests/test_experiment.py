@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from autoopt.experiment import ConcurrentRunError, _exclusive, run_experiment
+from autoopt.datagen import generate
+from autoopt.experiment import (
+    ConcurrentRunError,
+    _exclusive,
+    run_experiment,
+    select_shard,
+)
 
 
 def test_two_runs_cannot_share_one_output(tmp_path: Path) -> None:
@@ -94,3 +100,51 @@ def test_an_unreadable_lock_is_not_permanent(tmp_path: Path) -> None:
 
     progress = run_experiment(output, methods=("greedy",), limit=1, prove_final=False)
     assert progress.completed == progress.total > 0
+
+
+def shard_programs(shards: int, shard: int) -> list[str]:
+    """Which program ids a worker would take, asked of the code that decides.
+
+    Reimplementing the split here would only prove this file's arithmetic: an
+    earlier version did exactly that and passed against a deliberately broken
+    engine.
+    """
+    return [p.program_id for p in select_shard(generate(), shard, shards)]
+
+
+def test_shards_partition_the_corpus_exactly() -> None:
+    """No program run twice, none missed.
+
+    An overlap spends quota twice for one row and leaves the merge with a
+    duplicate; a gap leaves a hole nothing would report, because every worker
+    finishes cleanly having done its own slice.
+    """
+    everything = [p.program_id for p in generate()]
+    for shards in (2, 3, 6, 7):
+        slices = [shard_programs(shards, index) for index in range(shards)]
+        combined = [pid for slice_ in slices for pid in slice_]
+
+        assert sorted(combined) == sorted(everything), f"{shards} shards lost or repeated work"
+        assert len(set(combined)) == len(combined)
+
+
+def test_every_shard_sees_every_category() -> None:
+    """Strided, not blocked.
+
+    A contiguous split would hand one worker all the loop programs, so it would
+    still be running long after the others finished and a partial result would
+    be a biased sample rather than a smaller one.
+    """
+    for index in range(6):
+        taken = set(shard_programs(6, index))
+        categories = {pid.rsplit("_", 1)[0] for pid in taken}
+        assert len(categories) == 7, f"shard {index} only covers {categories}"
+
+
+def test_a_shard_outside_the_run_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="shard"):
+        run_experiment(tmp_path / "r.csv", methods=("greedy",), limit=1, shard=6, shards=6)
+
+
+def test_one_shard_of_one_is_the_whole_corpus() -> None:
+    assert shard_programs(1, 0) == [p.program_id for p in generate()]

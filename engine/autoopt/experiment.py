@@ -195,6 +195,8 @@ def run_experiment(
     prove_final: bool = True,
     resume: bool = True,
     budgets: tuple[int | None, ...] = (None,),
+    shard: int = 0,
+    shards: int = 1,
     on_progress: Callable[[BatchProgress, dict[str, object]], None] | None = None,
 ) -> BatchProgress:
     """Run every (program, method) cell and append rows as they finish."""
@@ -207,12 +209,31 @@ def run_experiment(
             prove_final=prove_final,
             resume=resume,
             budgets=budgets,
+            shard=shard,
+            shards=shards,
             on_progress=on_progress,
         )
 
 
 class ConcurrentRunError(RuntimeError):
     """Another run already owns this output file."""
+
+
+def select_shard(corpus: list[GeneratedProgram], shard: int, shards: int) -> list[GeneratedProgram]:
+    """The slice of the corpus one worker takes.
+
+    Strided rather than a contiguous block, so every worker sees the same mix of
+    categories and sizes. A block-per-worker split would hand one of them all
+    the loop programs, leaving it running long after the rest had finished and
+    making any partial result a biased sample rather than a smaller one.
+
+    Taken together the slices must reproduce the corpus exactly: an overlap
+    spends quota twice for one row, and a gap leaves a hole that nothing would
+    report, because every worker finishes cleanly having done its own slice.
+    """
+    if shards <= 1:
+        return corpus
+    return [program for index, program in enumerate(corpus) if index % shards == shard]
 
 
 def _holder_gone(held: str) -> bool:
@@ -298,8 +319,12 @@ def _run_experiment(
     prove_final: bool = True,
     resume: bool = True,
     budgets: tuple[int | None, ...] = (None,),
+    shard: int = 0,
+    shards: int = 1,
     on_progress: Callable[[BatchProgress, dict[str, object]], None] | None = None,
 ) -> BatchProgress:
+    if not 0 <= shard < shards:
+        raise ValueError(f"shard {shard} is not in a run of {shards}")
     corpus = generate()
     if limit is not None:
         # Take a slice of each category rather than the first N programs, so a
@@ -312,6 +337,8 @@ def _run_experiment(
                 per_category[key] = per_category.get(key, 0) + 1
                 selected.append(program)
         corpus = selected
+
+    corpus = select_shard(corpus, shard, shards)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     done = _completed_cells(output) if resume else set()

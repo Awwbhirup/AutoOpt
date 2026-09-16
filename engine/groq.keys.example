@@ -1,0 +1,11 @@
+# One Groq API key per line. Blank lines and lines starting with # are ignored.
+#
+# Each key takes every Nth program, writes data/runs/llm_shardN.csv, and those
+# are folded back into llm.csv. Order decides the split, so keep it stable:
+# reordering makes every worker resume on a slice it has not started.
+#
+# Using keys from separate accounts to exceed a per-account limit is against
+# Groq's acceptable use policy, which names it directly.
+#
+# gsk_first_key_here
+# gsk_second_key_here

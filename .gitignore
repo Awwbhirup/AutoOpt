@@ -84,3 +84,6 @@ PLAN/
 
 # Cached LLM responses. Regenerable, and can be large.
 engine/.llm_cache/
+
+# Additional provider keys, one per line, for the parallel pass.
+engine/groq.keys

@@ -152,6 +152,28 @@ def _json_validate_failed(response: httpx.Response) -> bool:
         return False
 
 
+def _write_atomically(path: Path, payload: str) -> None:
+    """Write a cache entry so a reader never sees a half-written one.
+
+    Several workers can share one cache directory, and a plain write leaves a
+    window where the file exists but is incomplete. A reader landing in that
+    window gets a JSON error on an entry that is actually fine, and the run it
+    belongs to is recorded as a failure. Writing beside it and renaming makes
+    the entry appear whole or not at all.
+
+    The temporary name carries the process id so two workers writing the same
+    prompt do not tread on each other's partial file.
+    """
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.part")
+    temporary.write_text(payload, encoding="utf-8")
+    try:
+        os.replace(temporary, path)
+    except OSError:
+        # Another worker got there first, which is fine: the content is the
+        # same answer to the same prompt.
+        temporary.unlink(missing_ok=True)
+
+
 def redact(text: str, secrets: list[str]) -> str:
     """Keep credentials out of anything that gets printed or written to disk.
 
@@ -506,7 +528,7 @@ class ProviderChain:
                     ) from None
                 continue
 
-            path.write_text(json.dumps({"text": text, "provider": provider.name}), encoding="utf-8")
+            _write_atomically(path, json.dumps({"text": text, "provider": provider.name}))
             return Completion(text=text, provider=provider.name)
 
         if not self.allow_fallback:
