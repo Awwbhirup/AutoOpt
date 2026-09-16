@@ -25,6 +25,7 @@ import Link from "next/link";
 
 import { Backdrop } from "@/components/landing/backdrop";
 import { MethodRidgeline } from "@/components/landing/method-ridgeline";
+import { Reveal } from "@/components/landing/reveal";
 import { RecordedRun } from "@/components/landing/recorded-run";
 import { SmoothScroll } from "@/components/landing/smooth-scroll";
 import { RECORDED_SOURCE } from "@/lib/recorded-run";
@@ -128,29 +129,29 @@ export default function Home() {
       <main className="relative z-10 mx-auto w-full max-w-6xl flex-1 px-6">
         {/* Five columns of claim against seven of evidence. The evidence is the
             wider half because it is the argument, not an illustration of it. */}
-        <section className="grid gap-12 py-14 lg:grid-cols-12 lg:gap-14 lg:py-20">
+        <section className="grid gap-14 py-16 lg:grid-cols-12 lg:gap-16 lg:py-28">
           <div className="min-w-0 lg:sticky lg:top-24 lg:col-span-5 lg:self-start">
-            <p className="font-terminal text-[0.7rem] uppercase tracking-[0.28em] text-muted">
+            <p className="font-terminal text-[0.78rem] uppercase tracking-[0.3em] text-muted">
               verified compiler optimization
             </p>
 
-            <h1 className="mt-5 text-balance font-hero text-[clamp(1.95rem,3.9vw,3.05rem)] font-medium leading-[1.12] tracking-[-0.035em]">
+            <h1 className="mt-5 text-balance font-hero text-[clamp(2.6rem,5.2vw,4.4rem)] font-bold leading-[0.98] tracking-[-0.04em]">
               Every rewrite is checked
               {/* The clause the product turns on, in the colour the product
                   already uses for a rewrite that survived. */}
               <span className="text-accent"> before it is kept</span>.
             </h1>
 
-            <p className="mt-6 max-w-md text-pretty leading-relaxed text-muted">
+            <p className="mt-7 max-w-md text-pretty text-[1.02rem] leading-[1.65] text-muted">
               AutoOpt lowers a program to three-address code, looks for
               optimizations, and tests each one against the original before
               deciding. It refuses more than it keeps, and it writes down why.
             </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
+            <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3">
               <Link
                 href="/try"
-                className="group inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 font-hero text-[0.8rem] font-semibold tracking-[-0.01em] text-[#06120d] shadow-[0_0_0_0_var(--accent)] transition-[box-shadow,transform,filter] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_8px_28px_-8px_var(--accent)] hover:brightness-110"
+                className="group inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 font-hero text-[0.95rem] font-bold tracking-[-0.01em] text-[#06120d] shadow-[0_0_0_0_var(--accent)] transition-[box-shadow,transform,filter] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_8px_28px_-8px_var(--accent)] hover:brightness-110"
               >
                 Optimize a program
                 <span
@@ -162,7 +163,7 @@ export default function Home() {
               </Link>
               <Link
                 href="/docs"
-                className="group text-sm text-muted transition-colors duration-150 hover:text-foreground"
+                className="group text-[0.95rem] text-muted transition-colors duration-150 hover:text-foreground"
               >
                 See what the language supports
                 <span
@@ -174,16 +175,16 @@ export default function Home() {
               </Link>
             </div>
 
-            <dl className="mt-10 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
-              <div className="bg-accent-soft px-4 py-3 transition-colors duration-150 hover:bg-accent/10">
-                <dt className="font-terminal text-3xl tabular-nums text-accent">3</dt>
-                <dd className="mt-0.5 text-xs leading-snug text-muted">
+            <dl className="mt-12 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
+              <div className="bg-accent-soft px-5 py-4 transition-colors duration-150 hover:bg-accent/10">
+                <dt className="font-terminal text-4xl tabular-nums text-accent">3</dt>
+                <dd className="mt-1.5 text-[0.82rem] leading-snug text-muted">
                   rewrites kept in the run beside this
                 </dd>
               </div>
-              <div className="bg-refused-soft px-4 py-3 transition-colors duration-150 hover:bg-refused/10">
-                <dt className="font-terminal text-3xl tabular-nums text-refused">5</dt>
-                <dd className="mt-0.5 text-xs leading-snug text-muted">
+              <div className="bg-refused-soft px-5 py-4 transition-colors duration-150 hover:bg-refused/10">
+                <dt className="font-terminal text-4xl tabular-nums text-refused">5</dt>
+                <dd className="mt-1.5 text-[0.82rem] leading-snug text-muted">
                   verified, costed, refused anyway
                 </dd>
               </div>
@@ -195,13 +196,13 @@ export default function Home() {
           </div>
         </section>
 
-        <section data-reveal className="border-t border-line py-14">
+        <Reveal className="border-t border-line py-24">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0 max-w-xl">
-              <h2 className="font-hero text-xl font-medium tracking-[-0.02em]">
+              <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
                 And the same question asked four thousand times
               </h2>
-              <p className="mt-3 text-pretty text-sm leading-relaxed text-muted">
+              <p className="mt-4 text-pretty text-[0.95rem] leading-[1.7] text-muted">
                 Every method against all 500 programs. The three searches that
                 can cross a cost-neutral state land together at the back, the
                 three that cannot land together in the middle, and the two
@@ -214,18 +215,18 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="mt-8 overflow-hidden rounded-xl border border-line bg-surface/60 p-4 backdrop-blur-sm">
+          <div className="mt-10 overflow-hidden rounded-xl border border-line bg-surface/60 p-5 backdrop-blur-sm">
             <MethodRidgeline />
           </div>
-        </section>
+        </Reveal>
 
-        <section data-reveal className="border-t border-line py-14">
+        <Reveal className="border-t border-line py-24">
           <div className="grid gap-8 lg:grid-cols-12 lg:gap-14">
             <div className="min-w-0 lg:col-span-4">
-              <h2 className="font-hero text-xl font-medium tracking-[-0.02em]">
+              <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
                 The program that run started from
               </h2>
-              <p className="mt-3 text-pretty text-sm leading-relaxed text-muted">
+              <p className="mt-4 text-pretty text-[0.95rem] leading-[1.7] text-muted">
                 Two identities a reader can spot: adding nothing, and multiplying
                 by one. The engine has to find them from dataflow facts, show
                 each one is safe, and price it before it may keep it. It got{" "}
@@ -237,30 +238,30 @@ export default function Home() {
               <Listing source={RECORDED_SOURCE} />
             </div>
           </div>
-        </section>
+        </Reveal>
 
-        <section data-reveal className="border-t border-line py-14">
-          <h2 className="font-hero text-xl font-medium tracking-[-0.02em]">
+        <Reveal className="border-t border-line py-24">
+          <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
             How a change earns its place
           </h2>
           {/* A list, not cards. Nothing here is a separate object needing a
               boundary drawn round it; they are four stages of one pipeline. */}
-          <dl className="mt-8 grid gap-x-14 gap-y-8 sm:grid-cols-2">
+          <dl className="mt-12 grid gap-x-16 gap-y-12 sm:grid-cols-2">
             {HOW.map((item, index) => (
               <div key={item.term} className="group border-t border-line pt-4">
-                <dt className="flex gap-3 text-sm font-medium">
+                <dt className="flex gap-3.5 text-[1.02rem] font-semibold tracking-[-0.01em]">
                   <span className="font-terminal text-muted transition-colors duration-150 group-hover:text-accent">
                     {String(index + 1).padStart(2, "0")}
                   </span>
                   {item.term}
                 </dt>
-                <dd className="mt-2 text-pretty pl-8 text-sm leading-relaxed text-muted">
+                <dd className="mt-2.5 text-pretty pl-9 text-[0.92rem] leading-[1.7] text-muted">
                   {item.detail}
                 </dd>
               </div>
             ))}
           </dl>
-        </section>
+        </Reveal>
       </main>
 
       <footer className="relative z-10 border-t border-line">

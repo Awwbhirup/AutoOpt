@@ -28,70 +28,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AXIS, RIDGES, type MethodRidge } from "@/lib/method-ridges";
 
-const RAMP = ["#8b5cf6", "#5b7cfa", "#2aa8f2", "#1fd4c3", "#3ef2a0"];
+import { css, easeOutCubic, rampAt, type Rgb } from "./ramp";
 
 /** Oblique projection, in canvas units before the device ratio is applied. */
 const VIEW = {
   width: 640,
-  height: 340,
+  height: 380,
   /** How far each ridge behind the last steps right and up. */
   depthX: 26,
-  depthY: -21,
+  depthY: -23,
   /** Peak height of a fully saturated ridge. */
-  amplitude: 84,
-  padLeft: 74,
-  padBottom: 78,
+  amplitude: 92,
+  padLeft: 96,
+  padBottom: 84,
 };
 
 const ENTRANCE_MS = 1700;
 const MAX_DPR = 2;
 
-interface Rgb {
-  r: number;
-  g: number;
-  b: number;
-}
-
-function hexToRgb(hex: string): Rgb {
-  return {
-    r: parseInt(hex.slice(1, 3), 16),
-    g: parseInt(hex.slice(3, 5), 16),
-    b: parseInt(hex.slice(5, 7), 16),
-  };
-}
-
-/**
- * The ramp, sampled at a ridge's rank.
- *
- * Returns components rather than a string, because the draw loop needs the same
- * colour at several opacities per frame and assembling those by string surgery
- * on an rgb() is how one of them ends up malformed and silently transparent.
- */
-function rampAt(index: number, count: number): Rgb {
-  if (count <= 1) return hexToRgb(RAMP[RAMP.length - 1]);
-  const position = (index / (count - 1)) * (RAMP.length - 1);
-  const low = Math.floor(position);
-  const high = Math.min(low + 1, RAMP.length - 1);
-  const t = position - low;
-  const a = hexToRgb(RAMP[low]);
-  const b = hexToRgb(RAMP[high]);
-  return {
-    r: Math.round(a.r + (b.r - a.r) * t),
-    g: Math.round(a.g + (b.g - a.g) * t),
-    b: Math.round(a.b + (b.b - a.b) * t),
-  };
-}
-
-const css = ({ r, g, b }: Rgb, alpha = 1) =>
-  alpha >= 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${alpha})`;
-
 /** For the DOM side, which only ever wants it opaque. */
 function colourFor(index: number, count: number): string {
   return css(rampAt(index, count));
-}
-
-function easeOutCubic(t: number): number {
-  return 1 - Math.pow(1 - t, 3);
 }
 
 function label(method: string): string {
@@ -155,7 +112,7 @@ export function MethodRidgeline({ className }: { className?: string }) {
       };
     };
 
-    const draw = (now: number) => {
+    const render = (now: number) => {
       if (start === 0) start = now;
       const elapsed = now - start;
       const entrance = reduced.matches
@@ -170,8 +127,11 @@ export function MethodRidgeline({ className }: { className?: string }) {
 
       const scaleX = width / VIEW.width;
       const scaleY = height / VIEW.height;
-      const depthX = (VIEW.depthX + (tilt.current.x - 0.5) * 26) * scaleX;
-      const depthY = (VIEW.depthY - (tilt.current.y - 0.5) * 18) * scaleY;
+      // Negated, so moving the pointer right swings the scene as though you
+      // had stepped to the right of it. Offsetting with the pointer instead
+      // read as the object running away from the cursor.
+      const depthX = (VIEW.depthX - (tilt.current.x - 0.5) * 26) * scaleX;
+      const depthY = (VIEW.depthY + (tilt.current.y - 0.5) * 18) * scaleY;
       const amplitude = VIEW.amplitude * scaleY;
 
       context.clearRect(0, 0, width, height);
@@ -205,7 +165,7 @@ export function MethodRidgeline({ className }: { className?: string }) {
       // curves on top of each other.
       for (let r = RIDGES.length - 1; r >= 0; r -= 1) {
         const ridge: MethodRidge = RIDGES[r];
-        const colour = rampAt(r, RIDGES.length);
+        const colour: Rgb = rampAt(r, RIDGES.length);
         const isHovered = hoveredRef.current === r;
         const dimmed = hoveredRef.current !== null && !isHovered;
 
@@ -255,13 +215,25 @@ export function MethodRidgeline({ className }: { className?: string }) {
         context.restore();
       }
 
-      raf = window.requestAnimationFrame(draw);
+    };
+
+    const loop = (now: number) => {
+      render(now);
+      raf = window.requestAnimationFrame(loop);
     };
 
     resize();
-    raf = window.requestAnimationFrame(draw);
+    // One frame straight away, before any animation frame is asked for.
+    // requestAnimationFrame does not fire while the tab is hidden or the window
+    // is occluded, and a chart that only ever paints inside it is a blank box
+    // until the reader happens to look at it.
+    render(performance.now());
+    raf = window.requestAnimationFrame(loop);
 
-    const onResize = () => resize();
+    const onResize = () => {
+      resize();
+      render(performance.now());
+    };
     window.addEventListener("resize", onResize);
     return () => {
       window.cancelAnimationFrame(raf);
@@ -304,7 +276,7 @@ export function MethodRidgeline({ className }: { className?: string }) {
       >
         <canvas
           ref={canvasRef}
-          className="h-[340px] w-full"
+          className="h-[380px] w-full"
           role="img"
           aria-label={`Cost reduction by method across ${RIDGES.reduce(
             (sum, ridge) => sum + ridge.n,

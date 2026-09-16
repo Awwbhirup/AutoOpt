@@ -30,7 +30,8 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import { columnsOf, CostTrajectory } from "@/components/landing/cost-trajectory";
+import { columnsOf } from "@/components/landing/cost-trajectory";
+import { RunTrajectory3D } from "@/components/landing/run-trajectory-3d";
 import { FinalVerdict } from "@/components/trace/final-verdict";
 import { TraceStepList } from "@/components/trace/step-list";
 import { RECORDED_EVENTS } from "@/lib/recorded-run";
@@ -149,7 +150,7 @@ export function RecordedRun() {
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center justify-between gap-3">
-        <p className="flex items-center gap-2 font-terminal text-xs text-muted">
+        <p className="flex items-center gap-2 font-terminal text-[0.78rem] text-muted">
           <span
             aria-hidden
             className={`h-1.5 w-1.5 rounded-full bg-accent ${
@@ -173,8 +174,8 @@ export function RecordedRun() {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-line bg-surface/80 shadow-[0_24px_60px_-32px_rgba(0,0,0,0.9)] backdrop-blur-sm">
-        <div className="border-b border-line px-3 pb-2.5 pt-3">
-          <CostTrajectory columns={columns} total={ALL_COLUMNS} />
+        <div className="border-b border-line px-4 pb-3 pt-4">
+          <RunTrajectory3D slabs={columns} total={ALL_COLUMNS} />
         </div>
 
         {/* Masked top and bottom, so a step arrives out of a fade rather than
@@ -183,7 +184,7 @@ export function RecordedRun() {
         <div
           ref={scroller}
           // Fixed, so the page does not grow for twelve seconds while it plays.
-          className="max-h-[21rem] overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin]"
+          className="max-h-[19rem] overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin]"
           style={{
             maskImage:
               "linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 18px), transparent 100%)",
