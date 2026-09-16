@@ -31,3 +31,51 @@ export function listProjects(
     orderBy: { name: "asc" },
   });
 }
+
+const projectRefSelect = {
+  id: true,
+  workspaceId: true,
+  name: true,
+} satisfies Prisma.ProjectSelect;
+
+export type ProjectRef = Prisma.ProjectGetPayload<{
+  select: typeof projectRefSelect;
+}>;
+
+/**
+ * One project by id, carrying the workspace it belongs to.
+ *
+ * A project id arrives from a form, so whoever is about to write into it has to
+ * be able to compare that workspace against the one the request was authorized
+ * for. Looking the project up by id alone is the only way to make that
+ * comparison possible.
+ */
+export function findProject(
+  db: PrismaClient,
+  projectId: string,
+): Promise<ProjectRef | null> {
+  return db.project.findUnique({
+    where: { id: projectId },
+    select: projectRefSelect,
+  });
+}
+
+export interface NewProject {
+  workspaceId: string;
+  name: string;
+  description: string | null;
+}
+
+/**
+ * Insert a project.
+ *
+ * A duplicate name is left to the [workspaceId, name] unique rather than
+ * checked first: a read followed by a write is two statements, and a second
+ * request fits between them.
+ */
+export function createProject(
+  db: PrismaClient,
+  input: NewProject,
+): Promise<ProjectRef> {
+  return db.project.create({ data: input, select: projectRefSelect });
+}

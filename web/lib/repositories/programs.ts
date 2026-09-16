@@ -38,3 +38,73 @@ export function listPrograms(
     orderBy: { updatedAt: "desc" },
   });
 }
+
+/**
+ * Every program in a workspace, grouped by project on the way out.
+ *
+ * One query rather than listPrograms per project: the projects page shows all
+ * of them, and the number of projects is whatever the workspace has made.
+ */
+export function listProgramsInWorkspace(
+  db: PrismaClient,
+  workspaceId: string,
+): Promise<ProgramListEntry[]> {
+  return db.program.findMany({
+    where: { project: { workspaceId } },
+    select: programListSelect,
+    orderBy: [{ project: { name: "asc" } }, { updatedAt: "desc" }],
+  });
+}
+
+const programDetailSelect = {
+  ...programListSelect,
+  source: true,
+  // The workspace, so the caller can refuse a program id that belongs to
+  // someone else's workspace before rendering a line of it.
+  project: { select: { id: true, name: true, workspaceId: true } },
+} satisfies Prisma.ProgramSelect;
+
+export type ProgramDetail = Prisma.ProgramGetPayload<{
+  select: typeof programDetailSelect;
+}>;
+
+export function findProgram(
+  db: PrismaClient,
+  programId: string,
+): Promise<ProgramDetail | null> {
+  return db.program.findUnique({
+    where: { id: programId },
+    select: programDetailSelect,
+  });
+}
+
+const programRefSelect = {
+  id: true,
+  projectId: true,
+  name: true,
+} satisfies Prisma.ProgramSelect;
+
+export type ProgramRef = Prisma.ProgramGetPayload<{
+  select: typeof programRefSelect;
+}>;
+
+export interface NewProgram {
+  projectId: string;
+  authorId: string;
+  name: string;
+  source: string;
+  category: string;
+}
+
+/**
+ * Insert a program.
+ *
+ * `features` is left unset. The instruction counts are the engine's to report,
+ * and guessing them here would put a number on the page that no run produced.
+ */
+export function createProgram(
+  db: PrismaClient,
+  input: NewProgram,
+): Promise<ProgramRef> {
+  return db.program.create({ data: input, select: programRefSelect });
+}

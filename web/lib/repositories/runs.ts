@@ -102,6 +102,30 @@ export function listRecentRuns(
   });
 }
 
+/** One program's history. Same shape as the dashboard list, minus the filter. */
+export function listRunsForProgram(
+  db: PrismaClient,
+  programId: string,
+  limit: number = RECENT_LIMIT,
+): Promise<RunSummary[]> {
+  return db.run.findMany({
+    where: { programId },
+    select: runSummarySelect,
+    orderBy: { startedAt: "desc" },
+    take: limit,
+  });
+}
+
+/**
+ * Runs ever started in a workspace.
+ *
+ * Not the same number as the quota's usedRuns, which counts one month and is
+ * reset. Both are worth showing and neither can stand in for the other.
+ */
+export function countRuns(db: PrismaClient, workspaceId: string): Promise<number> {
+  return db.run.count({ where: { program: { project: { workspaceId } } } });
+}
+
 export interface RunEventInput {
   seq: number;
   kind: string;

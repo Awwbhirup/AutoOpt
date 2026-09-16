@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import { fakePrisma } from "../test-support/fake-prisma";
-import { findWorkspaceBySlug, listWorkspacesForUser } from "./workspaces";
+import { findQuota, findWorkspaceBySlug, listWorkspacesForUser } from "./workspaces";
 
 describe("listWorkspacesForUser", () => {
   it("asks Membership for one user, ordered by workspace name", async () => {
@@ -93,5 +93,22 @@ describe("findWorkspaceBySlug", () => {
     expect(
       await findWorkspaceBySlug(db.client, "nope", "user_1"),
     ).toBeNull();
+  });
+});
+
+describe("findQuota", () => {
+  it("reads the one row by the workspace it belongs to", async () => {
+    const db = fakePrisma({ "quota.findUnique": null });
+    await findQuota(db.client, "ws_1");
+
+    const call = db.only();
+    expect(call.model).toBe("quota");
+    expect(call.method).toBe("findUnique");
+    expect(call.args.where).toEqual({ workspaceId: "ws_1" });
+  });
+
+  it("reports no row rather than a quota of zero", async () => {
+    const db = fakePrisma({ "quota.findUnique": null });
+    expect(await findQuota(db.client, "ws_1")).toBeNull();
   });
 });

@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import { fakePrisma } from "../test-support/fake-prisma";
 import {
   appendRunEvents,
+  countRuns,
   finalizeRun,
   findRunWithEvents,
   listRecentRuns,
+  listRunsForProgram,
 } from "./runs";
 
 describe("findRunWithEvents", () => {
@@ -179,5 +181,37 @@ describe("finalizeRun", () => {
     expect(data.outputMatch).toBeUndefined();
     expect(data.finalProof).toBeUndefined();
     expect(data.error).toBeUndefined();
+  });
+});
+
+describe("listRunsForProgram", () => {
+  it("scopes to one program, newest first", async () => {
+    const db = fakePrisma({ "run.findMany": [] });
+    await listRunsForProgram(db.client, "prog_1");
+
+    const call = db.only();
+    expect(call.args.where).toEqual({ programId: "prog_1" });
+    expect(call.args.orderBy).toEqual({ startedAt: "desc" });
+    expect(call.args.take).toBe(20);
+  });
+
+  it("honours an explicit limit", async () => {
+    const db = fakePrisma({ "run.findMany": [] });
+    await listRunsForProgram(db.client, "prog_1", 5);
+
+    expect(db.only().args.take).toBe(5);
+  });
+});
+
+describe("countRuns", () => {
+  it("counts through program and project, like the list does", async () => {
+    const db = fakePrisma({ "run.count": 3 });
+    expect(await countRuns(db.client, "ws_1")).toBe(3);
+
+    const call = db.only();
+    expect(call.method).toBe("count");
+    expect(call.args.where).toEqual({
+      program: { project: { workspaceId: "ws_1" } },
+    });
   });
 });

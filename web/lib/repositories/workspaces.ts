@@ -87,3 +87,31 @@ export async function findWorkspaceBySlug(
   const { memberships, ...workspace } = row;
   return { ...workspace, membership: memberships[0] ?? null };
 }
+
+const quotaSelect = {
+  monthlyRuns: true,
+  usedRuns: true,
+  periodStart: true,
+  updatedAt: true,
+} satisfies Prisma.QuotaSelect;
+
+export type WorkspaceQuota = Prisma.QuotaGetPayload<{
+  select: typeof quotaSelect;
+}>;
+
+/**
+ * The workspace's run allowance for the current period.
+ *
+ * Null where no row has been written, which is a workspace nobody has put a
+ * limit on. A caller that reads that as zero remaining would stop a workspace
+ * that was never restricted.
+ */
+export function findQuota(
+  db: PrismaClient,
+  workspaceId: string,
+): Promise<WorkspaceQuota | null> {
+  return db.quota.findUnique({
+    where: { workspaceId },
+    select: quotaSelect,
+  });
+}
