@@ -1,21 +1,62 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --muted: #6b6a63;
+  --raised: #ffffff;
+  --flag: #b45309;
+  /* Warm paper rather than #fff, and ink rather than #000. Both are pulled
+     toward the yellow-green end so the emerald the product already uses for
+     "kept" sits on them as a relative rather than as the one warm thing on a
+     cold page. Recorded here because a palette nobody can explain is one that
+     drifts: neutrals 30 degrees warmer than the blue-grey default, one accent,
+     and the two semantic hues below carried straight from the verdict badges. */
+  --background: #faf9f5;
+  --foreground: #1a1a17;
+  --surface: #ffffff;
+  --border: #e6e3da;
+
+  /* Not decoration. Green already means kept in this product and red already
+     means refused; the page is not allowed to invent a second colour language
+     on top of the one the traces use. */
+  --accent: #047857;
+  --accent-soft: #ecfdf5;
+  --refused: #9f1239;
+  --refused-soft: #fff1f2;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-line: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-refused: var(--refused);
+  --color-refused-soft: var(--refused-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display);
+  --font-terminal: var(--font-terminal);
+  --font-hero: var(--font-hero);
+  --color-muted: var(--muted);
+  --color-raised: var(--raised);
+  --color-flag: var(--flag);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0c0d0b;
+    --foreground: #e8e6df;
+    --surface: #131512;
+    --border: #262822;
+
+    --accent: #34d399;
+    --accent-soft: #0d1f18;
+    --refused: #fb7185;
+    --refused-soft: #1f1113;
+    --muted: #8b8f87;
+    --raised: #1a1d19;
+    --flag: #f59e0b;
   }
 }
 
@@ -26,4 +67,75 @@ body {
      used to name Arial, which threw that away: the fonts were fetched on every
      page and then not used by anything. */
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+
+/*
+ * The landing page is dark whatever the reader's system says.
+ *
+ * A deliberate exception, and the only one: the page is a demo surface and its
+ * whole subject is a terminal-coloured decision log, which does not survive
+ * being shown on white. Every workspace page still follows the system, because
+ * a product that ignores that setting is a product people stop using at night.
+ *
+ * Scoped as tokens rather than written as dark: variants throughout, so the
+ * page has no light branch to keep in step and the rest of the application is
+ * untouched by any of it.
+ */
+.landing {
+  --background: #0a0b0d;
+  --surface: #0f1114;
+  --raised: #151920;
+  --border: #23282f;
+  --foreground: #e9ecef;
+  --muted: #868f9b;
+
+  /* Terminal green, pushed brighter than the product's badge green so it can
+     carry a headline. Still the same signal: this is the colour of a rewrite
+     that survived. */
+  --accent: #3ddc97;
+  --accent-soft: #0d2019;
+  /* Refused. Warm against the green rather than a second cool hue, so the two
+     never read as a gradient between each other. */
+  --refused: #ff7a8a;
+  --refused-soft: #211216;
+  --flag: #ffc46b;
+}
+
+.landing ::selection {
+  background: var(--accent);
+  color: #06120d;
+}
+
+
+/*
+ * The backdrop.
+ *
+ * Two very large, very dim washes of the accent drifting on long cycles, over a
+ * grain layer. Flat black read as a void behind a page whose subject is a live
+ * process; this gives it somewhere to happen without putting anything on screen
+ * the eye can lock onto. Nothing here crosses 6% opacity, and the cycles are
+ * long enough that the movement is only visible if you go looking for it.
+ *
+ * Composited transforms only, so the whole thing costs the GPU a layer and the
+ * main thread nothing.
+ */
+@keyframes landing-drift-a {
+  0%, 100% { transform: translate3d(-8%, -6%, 0) scale(1); }
+  50%      { transform: translate3d(6%, 8%, 0) scale(1.18); }
+}
+
+@keyframes landing-drift-b {
+  0%, 100% { transform: translate3d(7%, 5%, 0) scale(1.12); }
+  50%      { transform: translate3d(-6%, -7%, 0) scale(1); }
+}
+
+.landing-wash-a { animation: landing-drift-a 34s ease-in-out infinite; }
+.landing-wash-b { animation: landing-drift-b 44s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-wash-a,
+  .landing-wash-b {
+    animation: none;
+  }
 }
