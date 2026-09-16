@@ -38,6 +38,7 @@ CATEGORY_ORDER = [
 #: lookups against it drop it silently; tests/test_stats.py enforces that.
 METHOD_ORDER = [
     "llm",
+    "llm_large",
     "fixed_pipeline",
     "greedy",
     "random_baseline",
