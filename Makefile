@@ -1,4 +1,4 @@
-.PHONY: help install lint fmt type test serve app llm-pass llm-status corpus experiment budgeted merge mutants analyze figures report notebook reproduce clean
+.PHONY: help install lint fmt type test serve app llm-pass llm-status llm-watch corpus experiment budgeted merge mutants analyze figures report notebook reproduce clean
 
 help:
 	@echo "install     install the engine with dev dependencies"
@@ -10,6 +10,7 @@ help:
 	@echo "app         run the application tier on :3000"
 	@echo "llm-pass    keep the llm pass going until the corpus is complete"
 	@echo "llm-status  how far the llm pass has got"
+	@echo "llm-watch   live view of the pass while it runs"
 	@echo "corpus      generate the 500-program dataset"
 	@echo "experiment  run every method x category cell -> master CSV"
 	@echo "budgeted    the same grid at three search budgets, for the statistics"
@@ -59,6 +60,9 @@ llm-pass:
 
 llm-status:
 	python scripts/llm_pass.py --status
+
+llm-watch:
+	python scripts/llm_watch.py
 
 corpus:
 	cd engine && python -m autoopt.cli corpus --out ../data/corpus
