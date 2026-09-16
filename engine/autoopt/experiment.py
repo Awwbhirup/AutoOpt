@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import os
+import subprocess
 import time
 import traceback
 from collections.abc import Callable, Iterator
@@ -214,6 +215,39 @@ class ConcurrentRunError(RuntimeError):
     """Another run already owns this output file."""
 
 
+def _holder_gone(held: str) -> bool:
+    """Is the process named in a lock file no longer running?
+
+    Unreadable or unparseable content counts as gone: a lock nobody can
+    identify cannot be waited on, so treating it as held would be permanent.
+    Only a pid that is demonstrably still alive keeps the lock.
+    """
+    try:
+        pid = int(held)
+    except ValueError:
+        return True
+    if pid == os.getpid():
+        return False
+    # os.name rather than sys.platform: a type checker narrows the latter to
+    # the platform it is running on and then calls the other branch dead code.
+    if os.name == "nt":
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return str(pid) not in result.stdout
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        # Alive, just owned by someone else.
+        return False
+    return False
+
+
 @contextmanager
 def _exclusive(output: Path) -> Iterator[None]:
     """One run per output file.
@@ -230,10 +264,19 @@ def _exclusive(output: Path) -> Iterator[None]:
         handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         held = lock.read_text(encoding="utf-8").strip() or "unknown"
-        raise ConcurrentRunError(
-            f"{output.name} is being written by pid {held}. Wait for it, or delete "
-            f"{lock} if that process is gone."
-        ) from None
+        # A lock outlives a process that was killed rather than allowed to
+        # finish, and this job is restarted unattended for days at a time. Left
+        # to mean "someone is running", one hard shutdown would block every
+        # later attempt for good, which is a worse failure than the one the
+        # lock exists to prevent.
+        if _holder_gone(held):
+            lock.unlink(missing_ok=True)
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        else:
+            raise ConcurrentRunError(
+                f"{output.name} is being written by pid {held}. Wait for it, or delete "
+                f"{lock} if that process is gone."
+            ) from None
 
     try:
         os.write(handle, str(os.getpid()).encode())
