@@ -47,6 +47,20 @@ LOG = ROOT / "data" / "runs" / "llm_pass.log"
 #: The batch's own console output, kept apart from the supervisor's decisions
 #: so the decision log stays readable.
 BATCH_LOG = ROOT / "data" / "runs" / "llm_pass_batches.log"
+
+
+def batch_log(shard: int, shards: int) -> Path:
+    """Each worker writes its own.
+
+    Handing one file handle to several processes lets their writes land at
+    the same offset, so lines interleave halfway through and the log becomes
+    unreadable exactly when something has gone wrong and it is needed.
+    """
+    if shards <= 1:
+        return BATCH_LOG
+    return BATCH_LOG.with_name(f"{BATCH_LOG.stem}_shard{shard}{BATCH_LOG.suffix}")
+
+
 LOCK = ROOT / "data" / "runs" / "llm_pass.lock"
 #: Written when the job has stopped making progress. Its presence is what
 #: --status reports, so a silent stall has somewhere visible to show up.
@@ -302,30 +316,37 @@ def run_batch() -> int:
     keys = api_keys()
     shards = max(1, len(keys))
     BATCH_LOG.parent.mkdir(parents=True, exist_ok=True)
+    seed_shards()
+    stamp = f"{datetime.now().astimezone():%Y-%m-%d %H:%M:%S %z}"
 
-    with BATCH_LOG.open("a", encoding="utf-8", errors="replace") as sink:
-        stamp = f"{datetime.now().astimezone():%Y-%m-%d %H:%M:%S %z}"
-        sink.write(f"\n--- batch started {stamp} across {shards} worker(s) ---\n")
-        sink.flush()
-
-        workers = [
-            start_worker(index, shards, keys[index] if keys else "", sink)
-            for index in range(shards)
-        ]
+    sinks = []
+    workers = []
+    try:
+        for index in range(shards):
+            sink = batch_log(index, shards).open(
+                "a", encoding="utf-8", errors="replace"
+            )
+            sink.write(f"\n--- worker {index} of {shards} started {stamp} ---\n")
+            sink.flush()
+            sinks.append(sink)
+            workers.append(
+                start_worker(index, shards, keys[index] if keys else "", sink)
+            )
 
         deadline = time.monotonic() + BATCH_TIMEOUT.total_seconds()
         codes = []
-        for worker in workers:
+        for index, worker in enumerate(workers):
             remaining = max(1.0, deadline - time.monotonic())
             try:
                 codes.append(worker.wait(timeout=remaining))
             except subprocess.TimeoutExpired:
-                sink.write(
-                    f"\n--- worker {worker.pid} killed: over its time limit ---\n"
-                )
+                sinks[index].write("\n--- killed: over its time limit ---\n")
                 worker.kill()
                 worker.wait()
                 codes.append(EXIT_TIMEOUT)
+    finally:
+        for sink in sinks:
+            sink.close()
 
     if not codes:
         return 1
@@ -345,9 +366,12 @@ def last_batch_error() -> str:
     reason is buried in a traceback several hundred lines into a log nobody is
     watching.
     """
-    if not BATCH_LOG.exists():
+    logs = [BATCH_LOG, *(batch_log(i, 2) for i in range(len(api_keys())))]
+    present = [path for path in logs if path.exists()]
+    if not present:
         return ""
-    tail = BATCH_LOG.read_text(encoding="utf-8", errors="replace").splitlines()[-80:]
+    newest = max(present, key=lambda path: path.stat().st_mtime)
+    tail = newest.read_text(encoding="utf-8", errors="replace").splitlines()[-80:]
     for line in reversed(tail):
         stripped = line.strip().strip("|").strip()
         if stripped.endswith("Error") or ": " in stripped and "Error" in stripped:
@@ -422,6 +446,44 @@ def supervise() -> int:
         return 130
     finally:
         LOCK.unlink(missing_ok=True)
+
+
+def seed_shards() -> None:
+    """Tell each worker what has already been answered.
+
+    A worker resumes from its own output file and nothing else, so a fresh
+    shard file means a fresh start: the first parallel run redid all 129
+    programs the single-key pass had already finished, because none of the six
+    had any way to know about them.
+
+    Giving every shard a copy of what is already done costs some duplicated
+    rows on disk and saves re-answering them. Extra rows are harmless, since a
+    worker only ever works on its own slice and the merge keys on program id.
+    """
+    keys = api_keys()
+    if len(keys) < 2 or not OUT.exists():
+        return
+
+    with OUT.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        done_rows = list(reader)
+        fields = reader.fieldnames or []
+    if not done_rows:
+        return
+
+    for index in range(len(keys)):
+        path = shard_output(index)
+        present = _programs_in(path)
+        missing = [row for row in done_rows if row["program_id"] not in present]
+        if not missing:
+            continue
+        exists = path.exists()
+        with path.open("a" if exists else "w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            if not exists:
+                writer.writeheader()
+            writer.writerows(missing)
+        log(f"told worker {index} about {len(missing)} programs already done")
 
 
 def combine_shards() -> int:
