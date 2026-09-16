@@ -44,6 +44,13 @@ class Move:
     def kind(self) -> OptimizationType:
         return self.opportunity.kind
 
+    @property
+    def site(self) -> int:
+        return self.opportunity.site
+
+    def as_applied(self) -> AppliedMove:
+        return AppliedMove(self.kind.value, self.site)
+
 
 @dataclass
 class SearchStats:
@@ -57,13 +64,32 @@ class SearchStats:
     budget_exhausted: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class AppliedMove:
+    """A transformation that was kept, and where it was applied.
+
+    The site is what lets a reader line an acceptance up with the proposal it
+    came from. Without it the decision log can say three changes were kept but
+    not which three, since the same transformation is usually proposed at
+    several places in one program.
+    """
+
+    kind: str
+    site: int
+
+
 @dataclass
 class SearchResult:
     program: TacProgram
     cost: float
-    applied: list[str] = field(default_factory=list)
+    moves: list[AppliedMove] = field(default_factory=list)
     iterations: int = 0
     stats: SearchStats = field(default_factory=SearchStats)
+
+    @property
+    def applied(self) -> list[str]:
+        """Just the kinds, in order. What the CSV column and the counts want."""
+        return [move.kind for move in self.moves]
 
 
 class Environment:

@@ -17,7 +17,7 @@ import random
 from ..ir import TacProgram, build_cfg
 from ..rules import analyse
 from ..transforms import apply
-from .base import Environment, SearchResult, Strategy
+from .base import AppliedMove, Environment, SearchResult, Strategy
 
 
 class FixedPipeline(Strategy):
@@ -49,7 +49,7 @@ class FixedPipeline(Strategy):
                 if not candidates:
                     break
                 current = candidates[0].program
-                applied.append(kind)
+                applied.append(candidates[0].as_applied())
                 iterations += 1
 
         return SearchResult(current, env.cost(current), applied, iterations, env.stats)
@@ -68,7 +68,7 @@ class Greedy(Strategy):
             if not moves:
                 break
             current = moves[0].program
-            applied.append(moves[0].kind.value)
+            applied.append(moves[0].as_applied())
             iterations += 1
 
         return SearchResult(current, env.cost(current), applied, iterations, env.stats)
@@ -96,7 +96,7 @@ class RandomBaseline(Strategy):
                 break
             chosen = moves[rng.randrange(len(moves))]
             current = chosen.program
-            applied.append(chosen.kind.value)
+            applied.append(chosen.as_applied())
             iterations += 1
 
         return SearchResult(current, env.cost(current), applied, iterations, env.stats)
@@ -152,10 +152,11 @@ class AStar(Strategy):
 
     def search(self, start: TacProgram, env: Environment, *, max_iterations: int) -> SearchResult:
         start_cost = env.cost(start)
-        best, best_cost, best_path = start, start_cost, []
+        best, best_cost = start, start_cost
+        best_path: list[AppliedMove] = []
 
         counter = 0
-        frontier: list[tuple[float, int, float, TacProgram, list[str]]] = [
+        frontier: list[tuple[float, int, float, TacProgram, list[AppliedMove]]] = [
             (start_cost - self._heuristic(start, env), counter, start_cost, start, [])
         ]
         seen: set[str] = {start.canonical_hash()}
@@ -187,7 +188,7 @@ class AStar(Strategy):
                         counter,
                         move.cost,
                         move.program,
-                        [*path, move.kind.value],
+                        [*path, move.as_applied()],
                     ),
                 )
 
@@ -216,12 +217,13 @@ class HillClimbing(Strategy):
     def search(self, start: TacProgram, env: Environment, *, max_iterations: int) -> SearchResult:
         rng = random.Random(self.seed)
         start_cost = env.cost(start)
-        best, best_cost, best_path = start, start_cost, []
+        best, best_cost = start, start_cost
+        best_path: list[AppliedMove] = []
         iterations = 0
 
         for attempt in range(self.restarts):
             current, sideways = start, 0
-            path: list[str] = []
+            path: list[AppliedMove] = []
 
             while iterations < max_iterations:
                 moves = env.successors(current)
@@ -243,7 +245,7 @@ class HillClimbing(Strategy):
                     break
 
                 current = chosen.program
-                path = [*path, chosen.kind.value]
+                path = [*path, chosen.as_applied()]
                 iterations += 1
 
                 if env.cost(current) < best_cost:
@@ -280,8 +282,9 @@ class SimulatedAnnealing(Strategy):
     def search(self, start: TacProgram, env: Environment, *, max_iterations: int) -> SearchResult:
         rng = random.Random(self.seed)
         current, current_cost = start, env.cost(start)
-        best, best_cost, best_path = current, current_cost, []
-        path: list[str] = []
+        best, best_cost = current, current_cost
+        best_path: list[AppliedMove] = []
+        path: list[AppliedMove] = []
 
         temperature = self.initial_temperature
         iterations = 0
@@ -296,7 +299,7 @@ class SimulatedAnnealing(Strategy):
 
             if delta <= 0 or rng.random() < math.exp(-delta / temperature):
                 current, current_cost = chosen.program, chosen.cost
-                path = [*path, chosen.kind.value]
+                path = [*path, chosen.as_applied()]
                 if current_cost < best_cost:
                     best, best_cost, best_path = current, current_cost, list(path)
 

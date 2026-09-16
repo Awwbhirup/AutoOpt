@@ -86,7 +86,7 @@ class LlmStrategy(Strategy):
                 continue
 
             current = move.program
-            applied.append(move.kind.value)
+            applied.append(move.as_applied())
             iterations += 1
 
             # The program changed, so every line number in the rejection list

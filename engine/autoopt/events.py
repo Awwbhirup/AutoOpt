@@ -132,6 +132,11 @@ class Decision(_Event):
     kind: Literal["decision"] = "decision"
     accepted: bool
     optimization_type: OptimizationType
+    #: Where the transformation was applied. Present on an acceptance, which is
+    #: reported once the search has settled and so cannot be matched to its
+    #: proposal by position. None on a rejection, which follows its proposal
+    #: directly and needs no help being placed.
+    site: int | None = None
     reject_reason: RejectReason | None = None
 
 

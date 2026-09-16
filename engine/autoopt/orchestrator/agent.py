@@ -258,15 +258,16 @@ class Orchestrator:
         environment = Environment(model, check, stats, record, node_budget=config.node_budget)
         outcome = self.strategy.search(program, environment, max_iterations=config.max_iterations)
 
-        for kind in outcome.applied:
-            bump(kind, "accepted")
+        for move in outcome.moves:
+            bump(move.kind, "accepted")
             self._emit(
                 Decision(
                     run_id=program_id,
                     seq=self._next_seq(),
                     iteration=outcome.iterations,
                     accepted=True,
-                    optimization_type=OptimizationType(kind),
+                    optimization_type=OptimizationType(move.kind),
+                    site=move.site,
                     reject_reason=None,
                 )
             )
