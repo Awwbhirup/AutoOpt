@@ -152,7 +152,7 @@ export default function Home() {
       <SmoothScroll />
 
       <Glass as="header" variant="bar" className="sticky top-0 z-20 border-b border-line">
-        <div className="mx-auto flex w-full max-w-6xl items-center gap-6 px-6 py-3.5">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-5 py-3.5 sm:gap-6 sm:px-6">
           <Link
             href="/"
             className="group flex shrink-0 items-center gap-2.5 font-terminal text-[0.95rem] tracking-tight"
@@ -163,7 +163,7 @@ export default function Home() {
             >
               {"->"}
             </span>
-            <span className="font-semibold transition-colors duration-150 group-hover:text-accent">
+            <span className="hidden font-semibold transition-colors duration-150 group-hover:text-accent xs:inline">
               autoopt
             </span>
           </Link>
@@ -178,13 +178,18 @@ export default function Home() {
             <span className="tabular-nums text-accent">0</span> false positives
           </p>
 
+          {/* The text links go before the action does. On a narrow screen the
+              wordmark, two links and a button came to 360px inside a 264px
+              viewport, which scrolled the whole page sideways. */}
           <nav className="ml-auto flex items-center gap-1">
-            {NAV.map((item) => (
-              <NavLink key={item.href} {...item} />
-            ))}
+            <span className="hidden items-center gap-1 sm:flex">
+              {NAV.map((item) => (
+                <NavLink key={item.href} {...item} />
+              ))}
+            </span>
             <Link
               href="/try"
-              className="ml-2 rounded-md border border-accent/40 bg-accent/10 px-3.5 py-1.5 font-hero text-[0.82rem] font-bold text-accent transition-all duration-200 hover:border-accent/80 hover:bg-accent/20"
+              className="ml-1 shrink-0 rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 font-hero text-[0.8rem] font-bold text-accent transition-all duration-200 hover:border-accent/80 hover:bg-accent/20 sm:ml-2 sm:px-3.5 sm:text-[0.82rem]"
             >
               Try it
             </Link>
