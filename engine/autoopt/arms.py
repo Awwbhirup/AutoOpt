@@ -30,6 +30,10 @@ from __future__ import annotations
 #: cannot silently serve each other's answers.
 LLM_ARMS: dict[str, str] = {
     "llm": "",
+    #: Four times the size, same provider and same prompt. There to test
+    #: the assumption the plan was built on: that a mid-sized model leaves
+    #: a validity rate worth analysing where a strong one flattens it.
+    "llm_large": "openai/gpt-oss-120b",
 }
 
 

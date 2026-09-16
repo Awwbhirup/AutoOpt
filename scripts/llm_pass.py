@@ -42,11 +42,18 @@ PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 if not PYTHON.exists():  # not Windows
     PYTHON = ROOT / ".venv" / "bin" / "python"
 
-OUT = ROOT / "data" / "runs" / "llm.csv"
-LOG = ROOT / "data" / "runs" / "llm_pass.log"
+#: Which arm this run is for. A second model is a second arm rather than a
+#: second script, so the whole supervisor works for it unchanged.
+METHOD = os.environ.get("AUTOOPT_PASS_METHOD", "llm")
+#: Programs per category, 0 for the whole corpus. A subset is how an expensive
+#: arm gets a paired comparison against the full one without paying for 500.
+LIMIT = int(os.environ.get("AUTOOPT_PASS_LIMIT", "0"))
+
+OUT = ROOT / "data" / "runs" / f"{METHOD}.csv"
+LOG = ROOT / "data" / "runs" / f"{METHOD}_pass.log"
 #: The batch's own console output, kept apart from the supervisor's decisions
 #: so the decision log stays readable.
-BATCH_LOG = ROOT / "data" / "runs" / "llm_pass_batches.log"
+BATCH_LOG = ROOT / "data" / "runs" / f"{METHOD}_pass_batches.log"
 
 
 def batch_log(shard: int, shards: int) -> Path:
@@ -61,15 +68,17 @@ def batch_log(shard: int, shards: int) -> Path:
     return BATCH_LOG.with_name(f"{BATCH_LOG.stem}_shard{shard}{BATCH_LOG.suffix}")
 
 
-LOCK = ROOT / "data" / "runs" / "llm_pass.lock"
+LOCK = ROOT / "data" / "runs" / f"{METHOD}_pass.lock"
 #: Written when the job has stopped making progress. Its presence is what
 #: --status reports, so a silent stall has somewhere visible to show up.
-STUCK = ROOT / "data" / "runs" / "llm_pass.stuck"
+STUCK = ROOT / "data" / "runs" / f"{METHOD}_pass.stuck"
 #: One API key per line. Each gets its own slice of the corpus and its own
 #: output file. Absent or holding one key, the pass runs as a single worker.
 KEYS_FILE = ROOT / "engine" / "groq.keys"
 
-TARGET_ROWS = 500
+#: How many programs this arm is meant to cover. The corpus holds 500 across
+#: seven categories, so a per-category limit scales the target with it.
+TARGET_ROWS = LIMIT * 7 if LIMIT else 500
 TASK_NAME = "AutoOptLlmPass"
 
 #: Quota is a rolling window rather than a clock reset, so rather than working
@@ -113,6 +122,65 @@ def log(message: str) -> None:
     LOG.parent.mkdir(parents=True, exist_ok=True)
     with LOG.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
+
+
+def running_arm() -> str | None:
+    """The arm whose supervisor is alive, if any.
+
+    Found by looking for a lock file naming a live process. There is one lock
+    per arm, so this also says plainly when two are running at once.
+    """
+    runs = ROOT / "data" / "runs"
+    if not runs.exists():
+        return None
+    for lock in sorted(runs.glob("*_pass.lock")):
+        try:
+            pid = int(lock.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError):
+            continue
+        if pid_alive(pid):
+            return lock.name[: -len("_pass.lock")]
+    return None
+
+
+def running_limit(arm: str) -> int:
+    """The per-category limit an arm's live workers were started with.
+
+    Read off the command line of a running worker, because the limit lives only
+    in the supervisor's environment and the live view is a separate process
+    that was never told. Zero means the whole corpus, which is also the answer
+    when nothing is running.
+    """
+    if os.name != "nt":
+        return 0
+    query = (
+        "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+        "ForEach-Object { $_.CommandLine }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", query],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            creationflags=NO_WINDOW,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+
+    for line in result.stdout.splitlines():
+        if f"--methods {arm} " not in line and not line.rstrip().endswith(
+            f"--methods {arm}"
+        ):
+            continue
+        parts = line.split()
+        if "--limit" in parts:
+            value = parts[parts.index("--limit") + 1]
+            if value.isdigit():
+                return int(value)
+        return 0
+    return 0
 
 
 def api_keys() -> list[str]:
@@ -222,7 +290,8 @@ def orphaned_batches() -> list[int]:
         return []
     query = (
         "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-        "Where-Object { $_.CommandLine -like '*autoopt.cli experiment*' } | "
+        "Where-Object { $_.CommandLine -like '*autoopt.cli experiment*' "
+        "-and $_.CommandLine -like '*--methods " + METHOD + " *' } | "
         'ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }'
     )
     try:
@@ -273,9 +342,11 @@ def batch_command(output: Path, shard: int, shards: int) -> list[str]:
         "--out",
         str(output),
         "--methods",
-        "llm",
+        METHOD,
         "--no-fallback",
     ]
+    if LIMIT:
+        command += ["--limit", str(LIMIT)]
     if shards > 1:
         command += ["--shards", str(shards), "--shard", str(shard)]
     return command

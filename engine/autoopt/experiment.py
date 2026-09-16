@@ -219,6 +219,30 @@ class ConcurrentRunError(RuntimeError):
     """Another run already owns this output file."""
 
 
+def select_limit(
+    corpus: list[GeneratedProgram], limit: int | None
+) -> list[GeneratedProgram]:
+    """The first `limit` programs of each category, or all of them.
+
+    Per category rather than the first N overall, so a reduced run still covers
+    every category instead of stopping partway through the first one.
+
+    Shared rather than inlined because anything reporting on a reduced run has
+    to agree with it about which programs are in scope, and a second
+    implementation of that is one that will eventually disagree.
+    """
+    if limit is None or limit <= 0:
+        return corpus
+    seen: dict[str, int] = {}
+    selected: list[GeneratedProgram] = []
+    for program in corpus:
+        key = program.category.value
+        if seen.get(key, 0) < limit:
+            seen[key] = seen.get(key, 0) + 1
+            selected.append(program)
+    return selected
+
+
 def select_shard(corpus: list[GeneratedProgram], shard: int, shards: int) -> list[GeneratedProgram]:
     """The slice of the corpus one worker takes.
 
@@ -326,17 +350,7 @@ def _run_experiment(
     if not 0 <= shard < shards:
         raise ValueError(f"shard {shard} is not in a run of {shards}")
     corpus = generate()
-    if limit is not None:
-        # Take a slice of each category rather than the first N programs, so a
-        # smoke run still covers every category.
-        per_category: dict[str, int] = {}
-        selected: list[GeneratedProgram] = []
-        for program in corpus:
-            key = program.category.value
-            if per_category.get(key, 0) < limit:
-                per_category[key] = per_category.get(key, 0) + 1
-                selected.append(program)
-        corpus = selected
+    corpus = select_limit(corpus, limit)
 
     corpus = select_shard(corpus, shard, shards)
 

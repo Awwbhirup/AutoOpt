@@ -29,11 +29,34 @@ from rich.table import Table
 from rich.text import Text
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Which arm to watch has to be settled before llm_pass is imported, since its
+# paths are derived from it at import time. An arm named on the command line
+# wins; failing that, whichever arm is currently running; failing that, the
+# default. The view is opened from a desktop shortcut that cannot know which
+# arm is in flight, and showing a finished one while another works looks
+# exactly like the thing being broken.
+if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+    os.environ["AUTOOPT_PASS_METHOD"] = sys.argv[1]
+    if len(sys.argv) > 2 and sys.argv[2].isdigit():
+        os.environ["AUTOOPT_PASS_LIMIT"] = sys.argv[2]
+else:
+    import llm_pass as _probe
+
+    _live = _probe.running_arm()
+    if _live:
+        os.environ["AUTOOPT_PASS_METHOD"] = _live
+        # The target row count comes from the limit, and the limit is not
+        # written down anywhere except the running supervisor's environment.
+        # Infer it from what that arm's workers were told.
+        os.environ.setdefault("AUTOOPT_PASS_LIMIT", str(_probe.running_limit(_live)))
+    del sys.modules["llm_pass"]
+
 import llm_pass as pass_
 
 sys.path.insert(0, str(pass_.ENGINE))
 from autoopt.datagen import generate
-from autoopt.experiment import select_shard
+from autoopt.experiment import select_limit, select_shard
 
 REFRESH_SECONDS = 2.0
 #: How often to ask a key what it has left. Rare, because asking costs a request
@@ -73,7 +96,10 @@ class Watcher:
         self.keys = pass_.api_keys()
         self.started_done = pass_.rows_done()
         shards = max(1, len(self.keys))
-        corpus = generate()
+        # Limited the same way the run is, before sharding, or the slices
+        # shown would be of the whole corpus while the workers are on a
+        # subset of it.
+        corpus = select_limit(generate(), pass_.LIMIT or None)
         for index in range(shards):
             self.quotas[index] = Quota()
             self.slices[index] = {
@@ -164,7 +190,7 @@ class Watcher:
             TextColumn("[dim]{task.percentage:>3.0f}%"),
             expand=False,
         )
-        bar.add_task("corpus", total=pass_.TARGET_ROWS, completed=done)
+        bar.add_task(pass_.METHOD, total=pass_.TARGET_ROWS, completed=done)
 
         table = Table(box=None, pad_edge=False, header_style="dim")
         table.add_column("worker", justify="right")
@@ -254,17 +280,34 @@ def main() -> int:
             stop.wait(QUOTA_EVERY)
 
     if watcher.keys:
+        # Once before the display opens, so the first frame carries real numbers
+        # rather than a column of "asking" that a short visit never sees filled.
+        with console.status("[dim]checking what each key has left[/dim]"):
+            watcher.refresh_quotas()
         threading.Thread(target=poll_quotas, daemon=True).start()
 
+    finished = pass_.rows_done() >= pass_.TARGET_ROWS
     try:
         with Live(watcher.render(), console=console, refresh_per_second=4) as live:
             while pass_.rows_done() < pass_.TARGET_ROWS:
+                finished = False
                 time.sleep(REFRESH_SECONDS)
                 live.update(watcher.render())
             live.update(watcher.render())
-        console.print("\n[bold green]The corpus is complete.[/bold green]")
+
+            if finished:
+                # Nothing left to watch. Exiting here would close the window
+                # before it could be read, which is indistinguishable from the
+                # thing being broken.
+                console.print("\n[bold green]The corpus is complete.[/bold green]")
+            else:
+                console.print("\n[bold green]Finished while you watched.[/bold green]")
+            console.print("[dim]Ctrl+C to close.[/dim]")
+            while True:
+                time.sleep(REFRESH_SECONDS)
+                live.update(watcher.render())
     except KeyboardInterrupt:
-        console.print("\n[dim]closed; the pass keeps running in the background[/dim]")
+        console.print("\n[dim]closed; the pass is unaffected[/dim]")
     finally:
         stop.set()
     return 0
