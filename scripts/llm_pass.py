@@ -701,15 +701,23 @@ def combine_shards() -> int:
     pieces is not finished from anywhere else's point of view, and the pieces
     are easy to forget. A program already in the main file wins, so re-running
     this is harmless.
+
+    The main file not existing yet is the ordinary case for a new arm, not an
+    error: every row of it was written by a worker, so there was never anything
+    to create it. Opening it unconditionally is what crashed this supervisor on
+    every batch it completed, and it did so where nothing could see it.
     """
     keys = api_keys()
     if len(keys) < 2:
         return 0
 
-    with OUT.open(encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        rows = list(reader)
-        fields = reader.fieldnames or []
+    rows: list[dict[str, str]] = []
+    fields: list[str] = []
+    if OUT.exists():
+        with OUT.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            rows = list(reader)
+            fields = list(reader.fieldnames or [])
     seen = {row["program_id"] for row in rows}
 
     added = 0
@@ -718,12 +726,22 @@ def combine_shards() -> int:
         if not path.exists():
             continue
         with path.open(encoding="utf-8", newline="") as handle:
-            for row in csv.DictReader(handle):
+            reader = csv.DictReader(handle)
+            # The columns come from whichever file was read first. Workers all
+            # run the same command, so their headers agree with each other and
+            # with the main file's.
+            if not fields:
+                fields = list(reader.fieldnames or [])
+            for row in reader:
                 if row["program_id"] in seen:
                     continue
                 seen.add(row["program_id"])
                 rows.append(row)
                 added += 1
+
+    if added and not fields:
+        log("workers produced rows with no header; not folding them in")
+        return 0
 
     if added:
         rows.sort(key=lambda row: row["program_id"])
