@@ -541,6 +541,55 @@ def mark_stuck(barren: int, code: int) -> None:
     log(f"STUCK: {message}")
 
 
+def desktop_shortcut() -> int:
+    """Put the live view one click away on the desktop.
+
+    Written through the shell's own shortcut object rather than by hand,
+    because a .lnk is a binary format and a hand-built one tends to work until
+    something about the path changes.
+    """
+    if os.name != "nt":
+        log("--shortcut only knows how to do this on Windows")
+        return 1
+
+    launcher = Path(__file__).resolve().with_name("watch-llm-pass.cmd")
+    if not launcher.exists():
+        log(f"no launcher at {launcher}")
+        return 1
+
+    lines = [
+        'Set sh = CreateObject("WScript.Shell")',
+        'desktop = sh.SpecialFolders("Desktop")',
+        'Set link = sh.CreateShortcut(desktop & "\\AutoOpt progress.lnk")',
+        f'link.TargetPath = "{launcher}"',
+        f'link.WorkingDirectory = "{ROOT}"',
+        'link.Description = "Live view of the AutoOpt optimization pass"',
+        # The console icon, so it looks like the thing it opens.
+        'link.IconLocation = "%SystemRoot%\\System32\\cmd.exe,0"',
+        "link.Save",
+    ]
+    script = "\n".join(lines) + "\n"
+    helper = ROOT / "data" / "runs" / "_shortcut.vbs"
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_text(script, encoding="utf-8")
+    try:
+        result = subprocess.run(
+            ["cscript", "//nologo", str(helper)],
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=NO_WINDOW,
+        )
+    finally:
+        helper.unlink(missing_ok=True)
+
+    if result.returncode != 0:
+        log(f"could not create the shortcut: {result.stderr.strip()}")
+        return result.returncode
+    log("put 'AutoOpt progress' on the desktop")
+    return 0
+
+
 def startup_entry() -> Path:
     """Where Windows looks for things to run when this user logs in.
 
@@ -643,12 +692,17 @@ def main() -> int:
     parser.add_argument(
         "--status", action="store_true", help="progress and recent decisions"
     )
+    parser.add_argument(
+        "--shortcut", action="store_true", help="put the live view on the desktop"
+    )
     args = parser.parse_args()
 
     if args.install:
         return install()
     if args.uninstall:
         return uninstall()
+    if args.shortcut:
+        return desktop_shortcut()
     if args.status:
         return status()
     return supervise()
