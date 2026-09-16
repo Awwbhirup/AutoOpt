@@ -24,7 +24,9 @@
 import Link from "next/link";
 
 import { Backdrop } from "@/components/landing/backdrop";
+import { MethodRidgeline } from "@/components/landing/method-ridgeline";
 import { RecordedRun } from "@/components/landing/recorded-run";
+import { SmoothScroll } from "@/components/landing/smooth-scroll";
 import { RECORDED_SOURCE } from "@/lib/recorded-run";
 
 /** Four, because there are four. Not three to fill a row. */
@@ -97,6 +99,7 @@ export default function Home() {
   return (
     <div className="landing relative flex min-h-full flex-1 flex-col bg-background text-foreground">
       <Backdrop />
+      <SmoothScroll />
 
       <header className="sticky top-0 z-20 border-b border-line bg-background/70 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
@@ -192,7 +195,31 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="border-t border-line py-14">
+        <section data-reveal className="border-t border-line py-14">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="min-w-0 max-w-xl">
+              <h2 className="font-hero text-xl font-medium tracking-[-0.02em]">
+                And the same question asked four thousand times
+              </h2>
+              <p className="mt-3 text-pretty text-sm leading-relaxed text-muted">
+                Every method against all 500 programs. The three searches that
+                can cross a cost-neutral state land together at the back, the
+                three that cannot land together in the middle, and the two
+                language-model arms land at the front. A Tukey test on this data
+                separates those three groups and no others.
+              </p>
+            </div>
+            <p className="font-terminal text-[0.66rem] text-muted">
+              drag your pointer across it
+            </p>
+          </div>
+
+          <div className="mt-8 overflow-hidden rounded-xl border border-line bg-surface/60 p-4 backdrop-blur-sm">
+            <MethodRidgeline />
+          </div>
+        </section>
+
+        <section data-reveal className="border-t border-line py-14">
           <div className="grid gap-8 lg:grid-cols-12 lg:gap-14">
             <div className="min-w-0 lg:col-span-4">
               <h2 className="font-hero text-xl font-medium tracking-[-0.02em]">
@@ -212,7 +239,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="border-t border-line py-14">
+        <section data-reveal className="border-t border-line py-14">
           <h2 className="font-hero text-xl font-medium tracking-[-0.02em]">
             How a change earns its place
           </h2>

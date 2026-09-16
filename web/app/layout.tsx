@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import {
+  Azeret_Mono,
+  Chakra_Petch,
   Geist,
   Geist_Mono,
-  JetBrains_Mono,
-  Space_Grotesk,
-  Unbounded,
+  Syne,
 } from "next/font/google";
 import type { ReactNode } from "react";
 
@@ -21,34 +21,29 @@ const geistMono = Geist_Mono({
 });
 
 /**
- * The landing page's two faces, loaded here because fonts have to be, and used
- * nowhere else. The application keeps Geist.
+ * The landing page's three faces. The application keeps Geist; none of these
+ * are loaded on a page that does not use them.
  *
- * Space Grotesk is a grotesque with the corners left on: the g, the a and the
- * numerals are odd in a way that reads as drawn rather than as defaulted, which
- * is the whole problem with the usual choice. JetBrains Mono carries the data,
- * because the data is code and the page should not pretend otherwise.
+ * Syne is a display grotesque that widens as it gets heavier and has corners
+ * where a normal one has curves. Chakra Petch carries UI text with the clipped
+ * corners of a technical drawing. Azeret Mono carries the data, because the
+ * data is code and the page should not pretend otherwise. Three faces is two
+ * more than a page usually needs; they are here because a single neutral sans
+ * across everything is the thing that made this read as a default.
  */
-const spaceGrotesk = Space_Grotesk({
+const syne = Syne({
+  variable: "--font-hero",
+  subsets: ["latin"],
+});
+
+const chakraPetch = Chakra_Petch({
   variable: "--font-display",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const azeretMono = Azeret_Mono({
   variable: "--font-terminal",
-  subsets: ["latin"],
-});
-
-/**
- * Headlines and the one button that matters.
- *
- * Wide, geometric, flat-terminalled: it reads as drawn rather than picked, and
- * it is doing the job a display face is for, which is being recognisable at two
- * sizes and in two places. Kept off body copy, where its width would cost more
- * lines than its character is worth.
- */
-const unbounded = Unbounded({
-  variable: "--font-hero",
   subsets: ["latin"],
 });
 
@@ -67,7 +62,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${unbounded.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} ${chakraPetch.variable} ${azeretMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

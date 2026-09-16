@@ -41,6 +41,11 @@
   --color-muted: var(--muted);
   --color-raised: var(--raised);
   --color-flag: var(--flag);
+  --color-ramp-0: var(--ramp-0);
+  --color-ramp-1: var(--ramp-1);
+  --color-ramp-2: var(--ramp-2);
+  --color-ramp-3: var(--ramp-3);
+  --color-ramp-4: var(--ramp-4);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -83,28 +88,35 @@ body {
  * untouched by any of it.
  */
 .landing {
-  --background: #0a0b0d;
-  --surface: #0f1114;
-  --raised: #151920;
-  --border: #23282f;
-  --foreground: #e9ecef;
-  --muted: #868f9b;
+  --background: #07080b;
+  --surface: #0c0e13;
+  --raised: #12151c;
+  --border: #1e2029;
+  --foreground: #eef1f5;
+  --muted: #7d8694;
 
-  /* Terminal green, pushed brighter than the product's badge green so it can
-     carry a headline. Still the same signal: this is the colour of a rewrite
-     that survived. */
-  --accent: #3ddc97;
-  --accent-soft: #0d2019;
-  /* Refused. Warm against the green rather than a second cool hue, so the two
-     never read as a gradient between each other. */
-  --refused: #ff7a8a;
-  --refused-soft: #211216;
+  /* The ramp the ridgeline is drawn with, and the page's colour language.
+     Violet at the front through to green at the back, because the ridges are
+     ordered by how much each method actually takes off: the colour is the
+     result, not a gradient chosen for looking like one. Sampled to stay at
+     even perceptual steps rather than even hue steps, which is what makes the
+     middle of a naive blue-to-green ramp turn muddy. */
+  --ramp-0: #8b5cf6;
+  --ramp-1: #5b7cfa;
+  --ramp-2: #2aa8f2;
+  --ramp-3: #1fd4c3;
+  --ramp-4: #3ef2a0;
+
+  --accent: #3ef2a0;
+  --accent-soft: #08201a;
+  --refused: #ff6584;
+  --refused-soft: #200f16;
   --flag: #ffc46b;
 }
 
 .landing ::selection {
   background: var(--accent);
-  color: #06120d;
+  color: #04140d;
 }
 
 
