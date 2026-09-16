@@ -44,6 +44,9 @@ LOG = ROOT / "data" / "runs" / "llm_pass.log"
 #: so the decision log stays readable.
 BATCH_LOG = ROOT / "data" / "runs" / "llm_pass_batches.log"
 LOCK = ROOT / "data" / "runs" / "llm_pass.lock"
+#: Written when the job has stopped making progress. Its presence is what
+#: --status reports, so a silent stall has somewhere visible to show up.
+STUCK = ROOT / "data" / "runs" / "llm_pass.stuck"
 
 TARGET_ROWS = 500
 TASK_NAME = "AutoOptLlmPass"
@@ -58,6 +61,17 @@ RETRY_AFTER_ERROR = timedelta(minutes=90)
 RETRY_AFTER_OFFLINE = timedelta(minutes=5)
 
 EXIT_QUOTA = 2
+#: Not a code the batch can return. Used to record that it was killed.
+EXIT_TIMEOUT = 124
+
+#: Longer than a full day's allowance takes to spend, so it only fires on
+#: something genuinely wedged rather than on a slow day.
+BATCH_TIMEOUT = timedelta(hours=8)
+
+#: Consecutive batches that added no rows before the job is called stuck.
+#: Two is a bad afternoon. Three is something that needs looking at, and
+#: waiting longer to say so only wastes more days.
+BARREN_LIMIT = 3
 
 
 def log(message: str) -> None:
@@ -158,10 +172,39 @@ def run_batch() -> int:
             f"\n--- batch started {datetime.now().astimezone():%Y-%m-%d %H:%M:%S %z} ---\n"
         )
         sink.flush()
-        result = subprocess.run(
-            command, cwd=ENGINE, check=False, stdout=sink, stderr=sink
-        )
+        try:
+            result = subprocess.run(
+                command,
+                cwd=ENGINE,
+                check=False,
+                stdout=sink,
+                stderr=sink,
+                # A socket that never answers would otherwise hold the
+                # supervisor open forever, and a supervisor waiting on a dead
+                # batch looks exactly like one doing its job.
+                timeout=BATCH_TIMEOUT.total_seconds(),
+            )
+        except subprocess.TimeoutExpired:
+            sink.write("\n--- batch killed: exceeded its time limit ---\n")
+            return EXIT_TIMEOUT
     return result.returncode
+
+
+def last_batch_error() -> str:
+    """The most useful line from the last batch, for the status summary.
+
+    A stuck supervisor is only actionable if the reason is to hand, and the
+    reason is buried in a traceback several hundred lines into a log nobody is
+    watching.
+    """
+    if not BATCH_LOG.exists():
+        return ""
+    tail = BATCH_LOG.read_text(encoding="utf-8", errors="replace").splitlines()[-80:]
+    for line in reversed(tail):
+        stripped = line.strip().strip("|").strip()
+        if stripped.endswith("Error") or ": " in stripped and "Error" in stripped:
+            return stripped[:200]
+    return ""
 
 
 def supervise() -> int:
@@ -171,6 +214,8 @@ def supervise() -> int:
 
     LOCK.parent.mkdir(parents=True, exist_ok=True)
     LOCK.write_text(str(os.getpid()), encoding="utf-8")
+    STUCK.unlink(missing_ok=True)
+    barren = 0
     log(f"supervisor started, {rows_done()} of {TARGET_ROWS} programs done")
 
     try:
@@ -189,6 +234,15 @@ def supervise() -> int:
             code = run_batch()
             gained = rows_done() - done
 
+            # Progress, not exit code, is what says whether this is working.
+            # Running out of allowance having done nothing is the same dead end
+            # as crashing, and both looked healthy from the outside.
+            if gained > 0:
+                barren = 0
+                STUCK.unlink(missing_ok=True)
+            else:
+                barren += 1
+
             if code == 0:
                 log(f"batch finished cleanly, {gained} programs added")
                 continue
@@ -197,18 +251,36 @@ def supervise() -> int:
                     f"daily allowance spent after {gained} programs; "
                     f"waiting {RETRY_AFTER_QUOTA}"
                 )
+                if barren >= BARREN_LIMIT:
+                    mark_stuck(barren, code)
                 time.sleep(RETRY_AFTER_QUOTA.total_seconds())
                 continue
 
             log(
                 f"batch exited {code} after {gained} programs; waiting {RETRY_AFTER_ERROR}"
             )
+            if barren >= BARREN_LIMIT:
+                mark_stuck(barren, code)
             time.sleep(RETRY_AFTER_ERROR.total_seconds())
     except KeyboardInterrupt:
         log("stopped by hand")
         return 130
     finally:
         LOCK.unlink(missing_ok=True)
+
+
+def mark_stuck(barren: int, code: int) -> None:
+    """Record that the job has stopped getting anywhere.
+
+    It ran for a whole day adding nothing while reporting itself as running,
+    because nothing distinguished "waiting for quota" from "failing every time".
+    Progress is the only honest measure, so a run of empty batches is written
+    somewhere --status will find it.
+    """
+    reason = last_batch_error() or f"batch exit code {code}"
+    message = f"{barren} batches in a row added nothing. Last error: {reason}"
+    STUCK.write_text(message, encoding="utf-8")
+    log(f"STUCK: {message}")
 
 
 def startup_entry() -> Path:
@@ -288,6 +360,12 @@ def status() -> int:
     done = rows_done()
     print(f"{done} of {TARGET_ROWS} programs done ({done / TARGET_ROWS:.0%})")
     print(f"running: {'yes' if already_running() else 'no'}")
+    # Said before anything else, because a supervisor that is running and a
+    # supervisor that is working are not the same thing and the difference has
+    # already cost a day.
+    if STUCK.exists():
+        print()
+        print(f"NOT PROGRESSING: {STUCK.read_text(encoding='utf-8').strip()}")
     if LOG.exists():
         tail = LOG.read_text(encoding="utf-8").splitlines()[-5:]
         print("\nlast few decisions:")
