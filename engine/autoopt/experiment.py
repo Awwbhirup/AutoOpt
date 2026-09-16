@@ -236,6 +236,9 @@ def _holder_gone(held: str) -> bool:
             capture_output=True,
             text=True,
             check=False,
+            # No console window. This runs inside an unattended job started
+            # from a windowless parent, where one would flash up on screen.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return str(pid) not in result.stdout
     try:

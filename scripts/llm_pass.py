@@ -60,6 +60,11 @@ RETRY_AFTER_ERROR = timedelta(minutes=90)
 #: No network. Short, because this is the case that resolves on its own.
 RETRY_AFTER_OFFLINE = timedelta(minutes=5)
 
+#: Windows gives a console to every process started from a windowless parent,
+#: so the batch and the process checks each flash one up. There is nothing to
+#: watch in them: the batch writes to its log and the checks are instant.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
 EXIT_QUOTA = 2
 #: Not a code the batch can return. Used to record that it was killed.
 EXIT_TIMEOUT = 124
@@ -141,6 +146,7 @@ def pid_alive(pid: int) -> bool:
             capture_output=True,
             text=True,
             check=False,
+            creationflags=NO_WINDOW,
         )
         return str(pid) in result.stdout
     try:
@@ -148,6 +154,60 @@ def pid_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def orphaned_batches() -> list[int]:
+    """Batch processes left behind by a supervisor that is gone.
+
+    Windows kills a process without touching its children, so stopping the
+    supervisor strands whatever batch it had running. A stranded batch still
+    holds the output file and still spends quota, and two of them writing the
+    same CSV is how a duplicate row got in.
+    """
+    if os.name != "nt":
+        return []
+    query = (
+        "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+        "Where-Object { $_.CommandLine -like '*autoopt.cli experiment*' } | "
+        'ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }'
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", query],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            creationflags=NO_WINDOW,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+    mine = os.getpid()
+    orphans = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        try:
+            pid, parent = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        # Anything whose parent is not this supervisor and not alive is loose.
+        if parent != mine and not pid_alive(parent):
+            orphans.append(pid)
+    return orphans
+
+
+def reap_orphans() -> None:
+    for pid in orphaned_batches():
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+            creationflags=NO_WINDOW,
+        )
+        log(f"stopped an orphaned batch, pid {pid}")
 
 
 def run_batch() -> int:
@@ -183,6 +243,7 @@ def run_batch() -> int:
                 # supervisor open forever, and a supervisor waiting on a dead
                 # batch looks exactly like one doing its job.
                 timeout=BATCH_TIMEOUT.total_seconds(),
+                creationflags=NO_WINDOW,
             )
         except subprocess.TimeoutExpired:
             sink.write("\n--- batch killed: exceeded its time limit ---\n")
@@ -215,6 +276,9 @@ def supervise() -> int:
     LOCK.parent.mkdir(parents=True, exist_ok=True)
     LOCK.write_text(str(os.getpid()), encoding="utf-8")
     STUCK.unlink(missing_ok=True)
+    # Before taking the output for ourselves, clear anything still holding
+    # it from a supervisor that was killed rather than asked to stop.
+    reap_orphans()
     barren = 0
     log(f"supervisor started, {rows_done()} of {TARGET_ROWS} programs done")
 
