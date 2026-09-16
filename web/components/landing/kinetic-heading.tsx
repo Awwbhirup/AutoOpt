@@ -60,7 +60,15 @@ export function KineticHeading({
   // Kept with their trailing space so the gaps survive. A space rendered as its
   // own inline-block collapses, and the words run together.
   const words = text.split(" ");
-  let cursor = 0;
+
+  // Each word's character offset in the whole string, worked out up front. A
+  // counter incremented inside the map would be reassigned by a callback that
+  // can run after render has finished, which is a different value on a second
+  // pass and a different stagger every time the component re-renders.
+  const offsets = words.reduce<number[]>((acc, word, index) => {
+    acc.push(index === 0 ? 0 : acc[index - 1] + words[index - 1].length + 1);
+    return acc;
+  }, []);
 
   return (
     <motion.span className={className} initial="rest" whileHover="lift">
@@ -68,8 +76,7 @@ export function KineticHeading({
 
       <span aria-hidden>
         {words.map((word, wordIndex) => {
-          const start = cursor;
-          cursor += word.length + 1;
+          const start = offsets[wordIndex];
 
           return (
             <span
