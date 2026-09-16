@@ -20,8 +20,9 @@ export function Backdrop() {
     <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
       {/* Graph paper, faded out before it reaches the middle so the content
           never sits on a visible ruling. */}
+      {/* Oversized and offset, so the creep never exposes an edge. */}
       <div
-        className="absolute inset-0 opacity-[0.55]"
+        className="landing-grid absolute -inset-24 opacity-[0.55] will-change-transform"
         style={{
           backgroundImage:
             "linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)",
@@ -47,6 +48,24 @@ export function Backdrop() {
             "radial-gradient(circle, #6ea8ff 0%, transparent 62%)",
         }}
       />
+
+      <div
+        className="landing-wash-c absolute left-1/4 top-1/4 h-[70vh] w-[70vh] rounded-full will-change-transform"
+        style={{
+          background: "radial-gradient(circle, #c084fc 0%, transparent 60%)",
+        }}
+      />
+
+      {/* One band of light crossing on a long cycle. */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="landing-sheen absolute -inset-y-1/3 left-0 w-[45%] -rotate-12 will-change-transform"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 0.022) 50%, transparent 100%)",
+          }}
+        />
+      </div>
 
       {/* Grain. Enough to stop the washes banding on an 8-bit panel, which is
           what a large soft gradient on near-black does without it. */}

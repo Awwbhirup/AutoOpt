@@ -183,8 +183,14 @@ export function RecordedRun() {
             than the window. */}
         <div
           ref={scroller}
+          // Lenis takes the wheel for the whole document, so without this the
+          // page scrolled while the pointer was over this list and the list
+          // itself did not. The attribute is how Lenis is told to leave an
+          // element's own scrolling alone; overscroll-contain then stops a
+          // flick that reaches the end of the list carrying on into the page.
+          data-lenis-prevent
           // Fixed, so the page does not grow for twelve seconds while it plays.
-          className="max-h-[19rem] overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin]"
+          className="max-h-[19rem] overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin] [scrollbar-color:var(--border)_transparent]"
           style={{
             maskImage:
               "linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 18px), transparent 100%)",

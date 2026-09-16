@@ -142,13 +142,48 @@ body {
   50%      { transform: translate3d(-6%, -7%, 0) scale(1); }
 }
 
+/* A third wash, on a third period, so no two of them ever line up. */
+@keyframes landing-drift-c {
+  0%, 100% { transform: translate3d(0, 4%, 0) scale(1.05); opacity: 0.035; }
+  50%      { transform: translate3d(-5%, -4%, 0) scale(1.22); opacity: 0.06; }
+}
+
+/* The grid creeps one cell over a minute and a half. At 64px that is under a
+   pixel a second: not something anyone will catch moving, but enough that the
+   background is never quite the same twice, which is what stops a flat colour
+   reading as a dead area of the screen. */
+@keyframes landing-grid-creep {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(64px, 64px, 0); }
+}
+
+/* A single band of light crossing the page on a long cycle. Low enough to be
+   deniable; the eye reads it as the surface being lit rather than as an
+   element moving over it. */
+@keyframes landing-sheen {
+  0%       { transform: translate3d(-40%, 0, 0); opacity: 0; }
+  12%      { opacity: 0.5; }
+  88%      { opacity: 0.5; }
+  100%     { transform: translate3d(140%, 0, 0); opacity: 0; }
+}
+
 .landing-wash-a { animation: landing-drift-a 34s ease-in-out infinite; }
 .landing-wash-b { animation: landing-drift-b 44s ease-in-out infinite; }
+.landing-wash-c { animation: landing-drift-c 61s ease-in-out infinite; }
+.landing-grid { animation: landing-grid-creep 96s linear infinite; }
+.landing-sheen { animation: landing-sheen 26s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   .landing-wash-a,
-  .landing-wash-b {
+  .landing-wash-b,
+  .landing-wash-c,
+  .landing-grid,
+  .landing-sheen {
     animation: none;
+  }
+
+  .landing-sheen {
+    opacity: 0;
   }
 }
 

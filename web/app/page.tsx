@@ -25,6 +25,7 @@ import Link from "next/link";
 
 import { Backdrop } from "@/components/landing/backdrop";
 import { Glass, GlassFilters } from "@/components/landing/glass";
+import { KineticHeading } from "@/components/landing/kinetic-heading";
 import { MethodRidgeline } from "@/components/landing/method-ridgeline";
 import { Reveal } from "@/components/landing/reveal";
 import { RecordedRun } from "@/components/landing/recorded-run";
@@ -64,14 +65,14 @@ function NavLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="group relative py-1 text-sm text-muted transition-colors duration-150 hover:text-foreground"
+      className="group relative rounded-md px-3 py-1.5 text-[0.9rem] text-muted transition-colors duration-150 hover:bg-white/[0.04] hover:text-foreground"
     >
       {label}
       {/* Drawn from the left on hover rather than faded in, so the direction
           matches the way the line is read. */}
       <span
         aria-hidden
-        className="absolute inset-x-0 -bottom-0.5 h-px origin-left scale-x-0 bg-accent transition-transform duration-200 ease-out group-hover:scale-x-100"
+        className="absolute inset-x-3 bottom-1 h-px origin-left scale-x-0 bg-accent transition-transform duration-200 ease-out group-hover:scale-x-100"
       />
     </Link>
   );
@@ -88,7 +89,7 @@ const FINDINGS = [
     note: "Multiplying by one, in the other branch. Same rewrite, and it has to be proved separately because it is a different line.",
   },
   {
-    token: "r3 = 0",
+    token: "int r3 = 0",
     note: "Assigned, then overwritten on both paths before anything reads it. Dead code elimination takes the whole line.",
   },
 ];
@@ -151,25 +152,42 @@ export default function Home() {
       <SmoothScroll />
 
       <Glass as="header" variant="bar" className="sticky top-0 z-20 border-b border-line">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-6 px-6 py-3.5">
           <Link
             href="/"
-            className="group flex items-center gap-2 font-terminal text-sm tracking-tight"
+            className="group flex shrink-0 items-center gap-2.5 font-terminal text-[0.95rem] tracking-tight"
           >
             <span
               aria-hidden
-              className="text-accent transition-transform duration-200 ease-out group-hover:translate-x-0.5"
+              className="grid h-6 w-6 place-items-center rounded border border-accent/35 bg-accent/10 text-[0.7rem] text-accent transition-all duration-200 group-hover:border-accent/70 group-hover:bg-accent/20"
             >
               {"->"}
             </span>
-            <span className="transition-colors duration-150 group-hover:text-accent">
+            <span className="font-semibold transition-colors duration-150 group-hover:text-accent">
               autoopt
             </span>
           </Link>
-          <nav className="flex items-center gap-6">
+
+          {/* What the page is evidence of, stated once where it stays in view. */}
+          <p className="hidden items-center gap-2 font-terminal text-[0.76rem] text-muted md:flex">
+            <span aria-hidden className="h-3 w-px bg-line" />
+            <span className="tabular-nums text-foreground">4,000</span> runs
+            <span aria-hidden className="text-muted/50">/</span>
+            <span className="tabular-nums text-foreground">8</span> methods
+            <span aria-hidden className="text-muted/50">/</span>
+            <span className="tabular-nums text-accent">0</span> false positives
+          </p>
+
+          <nav className="ml-auto flex items-center gap-1">
             {NAV.map((item) => (
               <NavLink key={item.href} {...item} />
             ))}
+            <Link
+              href="/try"
+              className="ml-2 rounded-md border border-accent/40 bg-accent/10 px-3.5 py-1.5 font-hero text-[0.82rem] font-bold text-accent transition-all duration-200 hover:border-accent/80 hover:bg-accent/20"
+            >
+              Try it
+            </Link>
           </nav>
         </div>
       </Glass>
@@ -183,11 +201,15 @@ export default function Home() {
               verified compiler optimization
             </p>
 
+            {/* The clause the product turns on is already in the colour the
+                traces use for a rewrite that survived; the hover carries that
+                colour back across the rest of the line, one letter at a time. */}
             <h1 className="mt-5 text-balance font-hero text-[clamp(2.6rem,5.2vw,4.4rem)] font-bold leading-[0.98] tracking-[-0.04em]">
-              Every rewrite is checked
-              {/* The clause the product turns on, in the colour the product
-                  already uses for a rewrite that survived. */}
-              <span className="text-accent"> before it is kept</span>.
+              <KineticHeading
+                text="Every rewrite is checked before it is kept."
+                accentFrom={24}
+                className="cursor-default"
+              />
             </h1>
 
             <p className="mt-7 max-w-md text-pretty text-[1.02rem] leading-[1.65] text-muted">
@@ -248,7 +270,7 @@ export default function Home() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0 max-w-xl">
               <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
-                And the same question asked four thousand times
+                <KineticHeading text="And the same question asked four thousand times" className="cursor-default" />
               </h2>
               <p className="mt-4 text-pretty text-[0.95rem] leading-[1.7] text-muted">
                 Every method against all 500 programs. The three searches that
@@ -269,10 +291,10 @@ export default function Home() {
         </Reveal>
 
         <Reveal className="border-t border-line py-24">
-          <div className="grid gap-10 lg:grid-cols-12 lg:gap-16">
+          <div className="grid items-start gap-10 lg:grid-cols-12 lg:gap-16">
             <div className="min-w-0 lg:col-span-4">
               <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
-                The program that run started from
+                <KineticHeading text="The program that run started from" className="cursor-default" />
               </h2>
               <p className="mt-5 text-pretty text-[1rem] leading-[1.75] text-muted">
                 Nine lines, and two of them are doing nothing. The engine has to
@@ -280,13 +302,20 @@ export default function Home() {
                 shape, show each rewrite is safe, and price it before it may
                 keep it.
               </p>
-              <dl className="mt-8 space-y-4">
+              {/* A flex row stretches its children by default, which turned
+                  each token chip into a tall green box the height of the note
+                  beside it. They sit on their own line instead, and the note
+                  runs under rather than beside: at this column width a chip
+                  plus a paragraph left about twenty characters a line. */}
+              <dl className="mt-10 space-y-6">
                 {FINDINGS.map((finding) => (
-                  <div key={finding.token} className="flex gap-3">
-                    <dt className="shrink-0 rounded border border-accent/35 bg-accent-soft px-2 py-0.5 font-terminal text-[0.82rem] text-accent">
-                      {finding.token}
+                  <div key={finding.token} className="border-l-2 border-accent/30 pl-4">
+                    <dt>
+                      <code className="rounded bg-accent/10 px-1.5 py-0.5 font-terminal text-[0.88rem] text-accent ring-1 ring-inset ring-accent/25">
+                        {finding.token}
+                      </code>
                     </dt>
-                    <dd className="text-[0.92rem] leading-[1.6] text-muted">
+                    <dd className="mt-2.5 text-pretty text-[0.95rem] leading-[1.7] text-muted">
                       {finding.note}
                     </dd>
                   </div>
@@ -303,7 +332,7 @@ export default function Home() {
         <Reveal className="border-t border-line py-24">
           <div className="max-w-2xl">
             <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
-              How a change earns its place
+              <KineticHeading text="How a change earns its place" className="cursor-default" />
             </h2>
             <p className="mt-5 text-pretty text-[1rem] leading-[1.75] text-muted">
               Four gates, in order. A rewrite that fails any of them is recorded
