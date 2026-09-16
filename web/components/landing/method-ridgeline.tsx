@@ -253,7 +253,10 @@ export function MethodRidgeline({ className }: { className?: string }) {
       const y = (event.clientY - rect.top) / rect.height;
       pointer.current = { x, y, inside: true };
 
-      const band = Math.floor(y * RIDGES.length);
+      // Ridge 0 is drawn at the front, which is the bottom of the picture, so
+      // screen y has to be flipped before it indexes them. It was not, and the
+      // highlight landed on the ridge opposite the one under the pointer.
+      const band = Math.floor((1 - y) * RIDGES.length);
       setHover(Math.max(0, Math.min(RIDGES.length - 1, band)));
     },
     [setHover],
@@ -288,7 +291,7 @@ export function MethodRidgeline({ className }: { className?: string }) {
 
         {/* Names sit in the DOM rather than on the canvas: canvas text is
             blurry at these sizes and cannot be selected or read aloud. */}
-        <ul className="pointer-events-none absolute inset-y-0 left-0 flex flex-col-reverse justify-center gap-0 py-6 font-terminal text-[0.62rem]">
+        <ul className="pointer-events-none absolute inset-y-0 left-0 flex flex-col-reverse justify-center gap-0 py-6 font-terminal text-[0.74rem]">
           {RIDGES.map((ridge, index) => (
             <li
               key={ridge.method}
@@ -309,7 +312,7 @@ export function MethodRidgeline({ className }: { className?: string }) {
         </ul>
 
         <div
-          className="pointer-events-none absolute right-0 top-0 min-w-[9rem] rounded-lg border border-line bg-raised/90 px-3 py-2 font-terminal text-[0.66rem] backdrop-blur transition-opacity duration-200"
+          className="pointer-events-none absolute right-0 top-0 min-w-[9rem] rounded-lg border border-line bg-raised/90 px-3 py-2 font-terminal text-[0.78rem] backdrop-blur transition-opacity duration-200"
           style={{ opacity: active ? 1 : 0 }}
         >
           <div className="text-foreground">{active ? label(active.method) : ""}</div>
@@ -326,7 +329,7 @@ export function MethodRidgeline({ className }: { className?: string }) {
         </div>
       </div>
 
-      <figcaption className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 font-terminal text-[0.66rem] text-muted">
+      <figcaption className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 font-terminal text-[0.8rem] text-muted">
         <span>cost reduction, kernel density per method</span>
         <span className="ml-auto tabular-nums text-foreground">
           {RIDGES.reduce((sum, ridge) => sum + ridge.n, 0).toLocaleString()} runs

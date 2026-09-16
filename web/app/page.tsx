@@ -24,6 +24,7 @@
 import Link from "next/link";
 
 import { Backdrop } from "@/components/landing/backdrop";
+import { Glass, GlassFilters } from "@/components/landing/glass";
 import { MethodRidgeline } from "@/components/landing/method-ridgeline";
 import { Reveal } from "@/components/landing/reveal";
 import { RecordedRun } from "@/components/landing/recorded-run";
@@ -76,18 +77,64 @@ function NavLink({ href, label }: { href: string; label: string }) {
   );
 }
 
+/** The two subexpressions the engine finds, and what it does with them. */
+const FINDINGS = [
+  {
+    token: "in1 + 0",
+    note: "Adding nothing. Algebraic simplification rewrites it to in1, which drops an arithmetic op and a temporary.",
+  },
+  {
+    token: "in1 * 1",
+    note: "Multiplying by one, in the other branch. Same rewrite, and it has to be proved separately because it is a different line.",
+  },
+  {
+    token: "r3 = 0",
+    note: "Assigned, then overwritten on both paths before anything reads it. Dead code elimination takes the whole line.",
+  },
+];
+
+/**
+ * Spans the engine actually acts on, so the reader sees what it saw.
+ *
+ * Split on the group, then decide by membership. Testing each piece against the
+ * same global regex would have been the obvious thing and would have been
+ * wrong: a /g regex carries lastIndex between calls, so it reports every other
+ * match as a miss.
+ */
+const HIGHLIGHT = /(in1 \+ 0|in1 \* 1|int r3 = 0)/g;
+const HIGHLIGHTED = new Set(["in1 + 0", "in1 * 1", "int r3 = 0"]);
+
 function Listing({ source }: { source: string }) {
   const lines = source.replace(/\n+$/, "").split("\n");
+
   return (
-    <pre className="overflow-x-auto font-terminal text-xs leading-6">
+    <pre className="overflow-x-auto font-terminal text-[0.95rem] leading-[2]">
       <code>
         {lines.map((line, index) => (
-          <span key={index} className="group grid grid-cols-[2rem_1fr]">
-            <span className="select-none pr-3 text-right tabular-nums text-muted transition-colors duration-100 group-hover:text-accent">
-              {index + 1}
+          <span
+            key={index}
+            className="group grid grid-cols-[2.5rem_1fr] rounded transition-colors duration-150 hover:bg-white/[0.035]"
+          >
+            <span className="select-none pr-4 text-right tabular-nums text-muted/50 transition-colors duration-150 group-hover:text-accent">
+              {String(index + 1).padStart(2, "0")}
             </span>
-            <span className="transition-colors duration-100 group-hover:text-accent">
-              {line === "" ? " " : line}
+            <span className="text-foreground/85">
+              {line === "" ? (
+                " "
+              ) : (
+                line.split(HIGHLIGHT).map((part, i) =>
+                  HIGHLIGHTED.has(part) ? (
+                    <mark
+                      key={i}
+                      className="rounded bg-accent/15 px-1 text-accent ring-1 ring-inset ring-accent/25"
+                    >
+                      {part}
+                    </mark>
+                  ) : (
+                    <span key={i}>{part}</span>
+                  ),
+                )
+              )}
             </span>
           </span>
         ))}
@@ -100,9 +147,10 @@ export default function Home() {
   return (
     <div className="landing relative flex min-h-full flex-1 flex-col bg-background text-foreground">
       <Backdrop />
+      <GlassFilters />
       <SmoothScroll />
 
-      <header className="sticky top-0 z-20 border-b border-line bg-background/70 backdrop-blur-md">
+      <Glass as="header" variant="bar" className="sticky top-0 z-20 border-b border-line">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
           <Link
             href="/"
@@ -124,7 +172,7 @@ export default function Home() {
             ))}
           </nav>
         </div>
-      </header>
+      </Glass>
 
       <main className="relative z-10 mx-auto w-full max-w-6xl flex-1 px-6">
         {/* Five columns of claim against seven of evidence. The evidence is the
@@ -210,63 +258,99 @@ export default function Home() {
                 separates those three groups and no others.
               </p>
             </div>
-            <p className="font-terminal text-[0.66rem] text-muted">
+            <p className="font-terminal text-[0.8rem] text-muted">
               drag your pointer across it
             </p>
           </div>
 
-          <div className="mt-10 overflow-hidden rounded-xl border border-line bg-surface/60 p-5 backdrop-blur-sm">
+          <Glass className="mt-10 overflow-hidden p-5">
             <MethodRidgeline />
-          </div>
+          </Glass>
         </Reveal>
 
         <Reveal className="border-t border-line py-24">
-          <div className="grid gap-8 lg:grid-cols-12 lg:gap-14">
+          <div className="grid gap-10 lg:grid-cols-12 lg:gap-16">
             <div className="min-w-0 lg:col-span-4">
               <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
                 The program that run started from
               </h2>
-              <p className="mt-4 text-pretty text-[0.95rem] leading-[1.7] text-muted">
-                Two identities a reader can spot: adding nothing, and multiplying
-                by one. The engine has to find them from dataflow facts, show
-                each one is safe, and price it before it may keep it. It got{" "}
-                <span className="font-terminal text-accent">35.9%</span> off the
-                weighted cost.
+              <p className="mt-5 text-pretty text-[1rem] leading-[1.75] text-muted">
+                Nine lines, and two of them are doing nothing. The engine has to
+                find that from dataflow facts rather than from recognising the
+                shape, show each rewrite is safe, and price it before it may
+                keep it.
               </p>
+              <dl className="mt-8 space-y-4">
+                {FINDINGS.map((finding) => (
+                  <div key={finding.token} className="flex gap-3">
+                    <dt className="shrink-0 rounded border border-accent/35 bg-accent-soft px-2 py-0.5 font-terminal text-[0.82rem] text-accent">
+                      {finding.token}
+                    </dt>
+                    <dd className="text-[0.92rem] leading-[1.6] text-muted">
+                      {finding.note}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             </div>
-            <div className="min-w-0 rounded-lg border border-line bg-surface/70 p-4 backdrop-blur-sm lg:col-span-8">
+
+            <Glass className="min-w-0 p-6 lg:col-span-8">
               <Listing source={RECORDED_SOURCE} />
-            </div>
+            </Glass>
           </div>
         </Reveal>
 
         <Reveal className="border-t border-line py-24">
-          <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
-            How a change earns its place
-          </h2>
-          {/* A list, not cards. Nothing here is a separate object needing a
-              boundary drawn round it; they are four stages of one pipeline. */}
-          <dl className="mt-12 grid gap-x-16 gap-y-12 sm:grid-cols-2">
+          <div className="max-w-2xl">
+            <h2 className="font-hero text-[clamp(1.7rem,3vw,2.5rem)] font-bold leading-[1.05] tracking-[-0.03em]">
+              How a change earns its place
+            </h2>
+            <p className="mt-5 text-pretty text-[1rem] leading-[1.75] text-muted">
+              Four gates, in order. A rewrite that fails any of them is recorded
+              and thrown away, which is what happens to most of them.
+            </p>
+          </div>
+
+          {/* A sequence, not a grid of equal cards: these are four stages of one
+              pipeline and the order is the content. The rule down the left is
+              the pipeline; each stage hangs off it. */}
+          <ol className="mt-14 space-y-px">
             {HOW.map((item, index) => (
-              <div key={item.term} className="group border-t border-line pt-4">
-                <dt className="flex gap-3.5 text-[1.02rem] font-semibold tracking-[-0.01em]">
-                  <span className="font-terminal text-muted transition-colors duration-150 group-hover:text-accent">
+              <li key={item.term} className="group relative">
+                <div className="grid gap-x-6 gap-y-3 py-7 sm:grid-cols-[auto_minmax(0,18rem)_minmax(0,1fr)] sm:items-baseline">
+                  <span
+                    aria-hidden
+                    className="font-terminal text-[0.8rem] tabular-nums text-muted transition-colors duration-200 group-hover:text-accent"
+                  >
                     {String(index + 1).padStart(2, "0")}
                   </span>
-                  {item.term}
-                </dt>
-                <dd className="mt-2.5 text-pretty pl-9 text-[0.92rem] leading-[1.7] text-muted">
-                  {item.detail}
-                </dd>
-              </div>
+                  <h3 className="font-hero text-[1.12rem] font-bold leading-snug tracking-[-0.01em] transition-colors duration-200 group-hover:text-accent">
+                    {item.term}
+                  </h3>
+                  <p className="text-pretty text-[0.98rem] leading-[1.75] text-muted">
+                    {item.detail}
+                  </p>
+                </div>
+
+                {/* The rule between stages, which lights up left to right as
+                    the stage above it is read. */}
+                <span
+                  aria-hidden
+                  className="absolute inset-x-0 bottom-0 h-px bg-line"
+                />
+                <span
+                  aria-hidden
+                  className="absolute inset-x-0 bottom-0 h-px origin-left scale-x-0 bg-accent transition-transform duration-500 ease-out group-hover:scale-x-100"
+                />
+              </li>
             ))}
-          </dl>
+          </ol>
         </Reveal>
       </main>
 
       <footer className="relative z-10 border-t border-line">
         <div className="mx-auto w-full max-w-6xl px-6 py-6">
-          <p className="font-terminal text-xs text-muted">
+          <p className="font-terminal text-[0.82rem] text-muted">
             The run above is recorded output, replayed. Nothing on this page is a
             figure typed in by hand.
           </p>

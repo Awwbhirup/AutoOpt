@@ -112,14 +112,19 @@ export function RunTrajectory3D({
       const scaleX = width / VIEW.width;
       const scaleY = height / VIEW.height;
 
-      // Negated, so moving the pointer right swings the scene as though you had
-      // stepped to the right of it. Following the pointer directly reads as the
-      // object running away from the cursor, which is what it was doing.
       const target = pointer.current.inside ? pointer.current : { x: 0.5, y: 0.5 };
       tilt.current.x += (target.x - tilt.current.x) * 0.07;
       tilt.current.y += (target.y - tilt.current.y) * 0.07;
-      const depthX = (VIEW.depthX - (tilt.current.x - 0.5) * 16) * scaleX;
-      const depthY = (VIEW.depthY + (tilt.current.y - 0.5) * 12) * scaleY;
+
+      // The pointer moves the whole scene and nothing within it. Tying the
+      // depth step to the pointer made the lanes breathe in and out, so the
+      // slab you were reaching for slid away as you reached for it; a reader
+      // aiming at a bar has to find it where they saw it. This is parallax:
+      // the viewpoint shifts, the arrangement does not.
+      const swayX = -(tilt.current.x - 0.5) * 16 * scaleX;
+      const swayY = -(tilt.current.y - 0.5) * 9 * scaleY;
+      const depthX = VIEW.depthX * scaleX;
+      const depthY = VIEW.depthY * scaleY;
 
       const laneWidth =
         (width - VIEW.padLeft * scaleX - 30 * scaleX - depthX * (total.length - 1)) /
@@ -132,6 +137,8 @@ export function RunTrajectory3D({
       const zOf = (index: number) => index * depthY;
 
       context.clearRect(0, 0, width, height);
+      context.save();
+      context.translate(swayX, swayY);
 
       // Floor, receding. There to say the slabs stand on something.
       context.strokeStyle = "rgba(125, 134, 148, 0.14)";
@@ -212,25 +219,49 @@ export function RunTrajectory3D({
           }
         } else {
           // A plate at the level it started and ended on. No height, because
-          // there is no change to draw; a minimum bar would invent one.
-          const plateY = yStart;
+          // there is no change to draw; a bar with a minimum height would be
+          // inventing one.
+          //
+          // It still has to arrive. These used to be painted at full size the
+          // moment the replay reached them while the solids beside them eased
+          // up, so the refusals looked like a rendering fault rather than the
+          // other half of the result. They rise the short distance from the
+          // floor instead, on the same curve.
+          const plateY = yOf(floor) + (yStart - (yOf(floor) + z)) * rise + z * rise;
+          const grow = 0.55 + rise * 0.45;
+          const halfW = (w * grow) / 2;
+          const midX = x + w / 2;
+          const plateD = d * grow;
+
           context.save();
+          context.globalAlpha = rise;
           if (!dimmed) {
-            context.shadowBlur = isHovered ? 22 : 11;
+            context.shadowBlur = isHovered ? 24 : 12;
             context.shadowColor = css(colour);
           }
-          context.fillStyle = css(colour, (isHovered ? 0.95 : 0.8) * depthFade);
+          context.fillStyle = css(colour, (isHovered ? 0.98 : 0.86) * depthFade);
           context.beginPath();
-          context.moveTo(x, plateY);
-          context.lineTo(x + d, plateY + depthY * 0.7);
-          context.lineTo(x + w + d, plateY + depthY * 0.7);
-          context.lineTo(x + w, plateY);
+          context.moveTo(midX - halfW, plateY);
+          context.lineTo(midX - halfW + plateD, plateY + depthY * 0.7);
+          context.lineTo(midX + halfW + plateD, plateY + depthY * 0.7);
+          context.lineTo(midX + halfW, plateY);
           context.closePath();
           context.fill();
+
+          // A short stem down to the floor, so a plate reads as standing at a
+          // level rather than floating at one.
+          context.globalAlpha = rise * 0.35;
+          context.strokeStyle = css(colour);
+          context.lineWidth = 1;
+          context.beginPath();
+          context.moveTo(midX, plateY);
+          context.lineTo(midX, yOf(floor) + z);
+          context.stroke();
           context.restore();
         }
       }
 
+      context.restore();
     };
 
     const loop = (now: number) => {
@@ -292,7 +323,7 @@ export function RunTrajectory3D({
       >
         <canvas
           ref={canvasRef}
-          className="h-[230px] w-full"
+          className="h-[248px] w-full"
           role="img"
           aria-label={`Weighted cost of each proposal in the run. ${
             total.filter((s) => s.improved).length
@@ -300,7 +331,7 @@ export function RunTrajectory3D({
         />
 
         <div
-          className="pointer-events-none absolute right-0 top-0 min-w-[10rem] rounded-lg border border-line bg-raised/90 px-3 py-2 font-terminal text-[0.66rem] backdrop-blur transition-opacity duration-200"
+          className="pointer-events-none absolute right-0 top-0 min-w-[10rem] rounded-lg border border-line bg-raised/90 px-3 py-2 font-terminal text-[0.78rem] backdrop-blur transition-opacity duration-200"
           style={{ opacity: active ? 1 : 0 }}
         >
           <div className="text-foreground">{active ? active.label : ""}</div>
@@ -316,7 +347,7 @@ export function RunTrajectory3D({
         </div>
       </div>
 
-      <figcaption className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-terminal text-[0.68rem] text-muted">
+      <figcaption className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-terminal text-[0.8rem] text-muted">
         <span className="flex items-center gap-1.5">
           <span
             aria-hidden

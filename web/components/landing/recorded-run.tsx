@@ -166,7 +166,7 @@ export function RecordedRun() {
             // Pressed describes the pause, not the button: the control's job is
             // stopping motion, so "on" has to mean stopped.
             aria-pressed={paused}
-            className="rounded border border-line px-2 py-0.5 font-terminal text-xs text-muted transition-colors duration-100 hover:border-accent hover:text-accent"
+            className="rounded border border-line px-2 py-0.5 font-terminal text-[0.82rem] text-muted transition-colors duration-100 hover:border-accent hover:text-accent"
           >
             {finished ? "replay" : paused ? "play" : "pause"}
           </button>
@@ -193,7 +193,7 @@ export function RecordedRun() {
           }}
         >
           {stepCount === 0 ? (
-            <p className="flex h-40 items-center justify-center font-terminal text-xs text-muted">
+            <p className="flex h-40 items-center justify-center font-terminal text-[0.82rem] text-muted">
               reading conditional_001
             </p>
           ) : (
