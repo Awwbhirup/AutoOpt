@@ -30,7 +30,11 @@ import { MethodRidgeline } from "@/components/landing/method-ridgeline";
 import { Reveal } from "@/components/landing/reveal";
 import { RecordedRun } from "@/components/landing/recorded-run";
 import { SmoothScroll } from "@/components/landing/smooth-scroll";
+import { RIDGES } from "@/lib/method-ridges";
 import { RECORDED_SOURCE } from "@/lib/recorded-run";
+
+/** Counted from the grid rather than typed, so another arm cannot make it a lie. */
+const RUNS = RIDGES.reduce((total, ridge) => total + ridge.n, 0);
 
 /** Four, because there are four. Not three to fill a row. */
 const HOW = [
@@ -219,9 +223,11 @@ export default function Home() {
           {/* What the page is evidence of, stated once where it stays in view. */}
           <p className="hidden items-center gap-2 font-terminal text-[0.76rem] text-muted md:flex">
             <span aria-hidden className="h-3 w-px bg-line" />
-            <span className="tabular-nums text-foreground">4,000</span> runs
+            <span className="tabular-nums text-foreground">{RUNS.toLocaleString()}</span>{" "}
+            runs
             <span aria-hidden className="text-muted/50">/</span>
-            <span className="tabular-nums text-foreground">8</span> methods
+            <span className="tabular-nums text-foreground">{RIDGES.length}</span>{" "}
+            methods
             <span aria-hidden className="text-muted/50">/</span>
             <span className="tabular-nums text-accent">0</span> false positives
           </p>
@@ -349,7 +355,7 @@ export default function Home() {
               <p className="mt-4 text-pretty text-[0.95rem] leading-[1.7] text-muted">
                 Every method against all 500 programs. The three searches that
                 can cross a cost-neutral state land together at the back, the
-                three that cannot land together in the middle, and the two
+                three that cannot land together in the middle, and the three
                 language-model arms land at the front. A Tukey test on this data
                 separates those three groups and no others.
               </p>
