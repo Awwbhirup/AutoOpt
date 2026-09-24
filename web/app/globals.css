@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/*
+ * dark: applies under a dark system theme, as before, and also anywhere inside
+ * the landing page, which is dark whatever the system says. The landing page
+ * reuses the trace components from the app, and those carry dark: variants; on
+ * a light system they rendered light rows under the landing page's light text,
+ * which made the replay's in-progress steps white on white.
+ */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    @slot;
+  }
+  &:where(.landing, .landing *) {
+    @slot;
+  }
+}
+
 :root {
   --muted: #6b6a63;
   --raised: #ffffff;
