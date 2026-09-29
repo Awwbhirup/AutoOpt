@@ -17,7 +17,8 @@ import { Select } from "@/components/ui/input";
 import { Callout } from "@/components/ui/surface";
 import { useToast } from "@/components/ui/toast";
 import { TraceStepList } from "@/components/trace/step-list";
-import { streamedEvent, type StreamedEvent } from "@/lib/events";
+import { readEventStream } from "@/lib/event-stream";
+import type { StreamedEvent } from "@/lib/events";
 import { foldTrace } from "@/lib/trace";
 
 const METHODS = [
@@ -65,33 +66,9 @@ export function RunProgram({ programId }: { programId: string }) {
         return;
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let ending: StreamedEvent["kind"] | null = null;
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let newline = buffer.indexOf("\n");
-        const arrived: StreamedEvent[] = [];
-        while (newline !== -1) {
-          const line = buffer.slice(0, newline).trim();
-          buffer = buffer.slice(newline + 1);
-          if (line) {
-            const parsed = streamedEvent.safeParse(JSON.parse(line));
-            if (parsed.success) {
-              arrived.push(parsed.data);
-              ending = parsed.data.kind;
-            }
-          }
-          newline = buffer.indexOf("\n");
-        }
-        // One update per chunk rather than per event, so a burst is one render.
-        if (arrived.length) setEvents((current) => [...current, ...arrived]);
-      }
+      const ending = await readEventStream(response.body, (arrived) =>
+        setEvents((current) => [...current, ...arrived]),
+      );
 
       // The run is in the database now, so the history above this needs to
       // catch up.
