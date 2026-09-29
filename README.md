@@ -22,6 +22,12 @@ the two, and the decision log says which.
 - Benchmark suites: pick programs, run them across several methods as a queue
   the database holds, and compare the methods on cost reduction and
   verification outcomes.
+- Workspace analytics: headline numbers first, then cost reduction per method
+  with the control methods marked, transformation acceptance, verification
+  outcomes and the slowest programs, over any date range.
+- Share links for a run or a suite's results: public, read-only, revocable,
+  optionally expiring, with a generated preview image for when the link is
+  pasted somewhere.
 - A playground at `/try` that needs no account, and a language reference at
   `/docs`.
 - Sign in with GitHub or with email and password (Auth.js, Prisma, Postgres).
