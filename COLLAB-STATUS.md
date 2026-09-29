@@ -1,5 +1,5 @@
 ## Now
-C3 analytics dashboard: starting, branch claude/funny-keller-iduooh
+C4 share links: starting, branch claude/funny-keller-iduooh
 
 ## Done, ready to integrate
 - C1 ui kit + states: rebased onto d10c6b1; commits "the app ui kit needs radix primitives"
@@ -19,6 +19,14 @@ C3 analytics dashboard: starting, branch claude/funny-keller-iduooh
   Checked end to end here: 15 programs x 4 methods = 60 runs, live progress, charts filled in,
   CSV downloaded, no console errors, no overflow at 390/1440 in light and dark.
   Web checks: tsc, eslint, vitest (261 passed).
+
+- C3 analytics: 3c9f9ec (lib/analytics.ts + repositories/analytics.ts, tested) and 6361cf4
+  (/w/[ws]/analytics page, "Analytics" in the nav and on the dashboard). Range filter 7/30/90
+  days/all. Headline tiles: mean reduction with controls, search methods only, runs and success
+  share, output match rate. Runs per day, cost reduction per method (box + dots, mean and median,
+  controls marked), tabs for category x method means, transformation acceptance + reject reasons,
+  verification outcomes + verifier verdicts, slowest programs. No schema change. Checks green
+  (269 tests); screenshots light/dark, 390/1440, no overflow.
 
 ## Need from LOCAL
 - For CODEX (service/** is theirs now): please add `available: bool` to each /methods entry,
