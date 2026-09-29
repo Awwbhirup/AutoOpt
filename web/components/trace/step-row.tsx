@@ -19,7 +19,7 @@ function Counterexample({ values }: { values: Record<string, number> }) {
   const pairs = Object.entries(values);
   if (pairs.length === 0) return null;
   return (
-    <p className="font-mono text-xs text-rose-700 dark:text-rose-400">
+    <p className="font-terminal tabular-nums text-xs text-refused">
       fails on {pairs.map(([name, value]) => `${name} = ${value}`).join(", ")}
     </p>
   );
@@ -37,24 +37,24 @@ export function TraceStepRow({
 
   return (
     <li
-      className={`border-b px-3 py-2 last:border-b-0 ${
+      className={`border-b px-4 py-3 last:border-b-0 ${
         settled
-          ? "border-zinc-200 dark:border-zinc-800"
-          : "border-dashed border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900"
+          ? "border-line"
+          : "border-dashed border-foreground/15 bg-foreground/5"
       }`}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="font-mono text-xs text-zinc-400 tabular-nums dark:text-zinc-600">
+        <span className="font-terminal tabular-nums text-xs text-muted tabular-nums opacity-70">
           {String(step.index).padStart(2, "0")}
         </span>
-        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+        <span className="text-sm font-medium text-foreground">
           {optimizationLabel(step.optimizationType)}
         </span>
-        <span className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="font-terminal tabular-nums text-xs text-muted">
           {step.site === null ? "no site" : `site ${step.site}`} / iteration {step.iteration}
         </span>
         {step.source === "llm" ? (
-          <span className="rounded border border-zinc-300 px-1 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+          <span className="rounded border border-foreground/15 px-1 text-xs text-muted">
             llm
           </span>
         ) : null}
@@ -93,20 +93,20 @@ export function TraceStepRow({
 
       {step.proposedTac === null && step.rationale === null && step.verification === null ? null : (
         <details className="mt-1.5">
-          <summary className="cursor-pointer text-xs text-zinc-500 marker:text-zinc-400 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100">
+          <summary className="cursor-pointer text-xs text-muted marker:text-muted hover:text-foreground">
             detail
           </summary>
           <div className="mt-2 space-y-2">
             {step.rationale === null ? null : (
-              <p className="text-xs text-zinc-600 dark:text-zinc-400">{step.rationale}</p>
+              <p className="text-xs text-foreground/75">{step.rationale}</p>
             )}
             {step.derivedFrom.length === 0 ? null : (
-              <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="font-terminal tabular-nums text-xs text-muted">
                 derived from {step.derivedFrom.join(", ")}
               </p>
             )}
             {step.verification === null ? null : (
-              <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="font-terminal tabular-nums text-xs text-muted">
                 {verificationMethodLabel(step.verification.method)},{" "}
                 {step.verification.durationMs.toFixed(1)} ms
                 {step.verification.inputsTested === null

@@ -8,29 +8,26 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
+import { PageMain } from "@/components/app/frame";
+import { RunStatusBadge } from "@/components/shell/run-table";
+import { formatWhen } from "@/components/shell/timestamp";
 import { FinalVerdict } from "@/components/trace/final-verdict";
 import { TraceStepList } from "@/components/trace/step-list";
 import { TacListing } from "@/components/trace/tac-listing";
-import { auth } from "@/auth";
+import { Callout, PageHeader } from "@/components/ui/surface";
 import { authorize } from "@/lib/authorize";
 import { prisma } from "@/lib/db";
 import { streamedEvent, type StreamedEvent } from "@/lib/events";
 import { findRunWithEvents } from "@/lib/repositories/runs";
-import { findWorkspaceBySlug } from "@/lib/repositories/workspaces";
 import { foldTrace } from "@/lib/trace";
+import { requireWorkspace } from "@/lib/workspace";
 
 export const metadata: Metadata = {
   title: "Run",
   description: "Every decision one optimization run made, as it was recorded.",
 };
-
-const WHEN = new Intl.DateTimeFormat("en-GB", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "UTC",
-});
 
 /**
  * Stored payloads were parsed once on the way in, so one that no longer parses
@@ -61,9 +58,9 @@ function elapsed(startedAt: Date, finishedAt: Date | null): string {
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="text-xs text-zinc-500 dark:text-zinc-400">{label}</dt>
-      <dd className="font-mono text-sm text-zinc-900 dark:text-zinc-100">{value}</dd>
+    <div className="min-w-0">
+      <dt className="text-[0.78rem] tracking-wider text-muted uppercase">{label}</dt>
+      <dd className="font-terminal tabular-nums mt-0.5 truncate text-sm">{value}</dd>
     </div>
   );
 }
@@ -74,15 +71,7 @@ export default async function RunDetailPage({
   params: Promise<{ workspace: string; id: string }>;
 }) {
   const { workspace: slug, id } = await params;
-
-  const session = await auth();
-  const userId = session?.user?.id;
-  if (!userId) redirect("/api/auth/signin");
-
-  const workspace = await findWorkspaceBySlug(prisma, slug, userId);
-  if (workspace === null) notFound();
-
-  const principal = { userId, role: workspace.membership?.role ?? null };
+  const { workspace, principal } = await requireWorkspace(slug);
   if (!authorize(principal, "trace:view")) notFound();
 
   const run = await findRunWithEvents(prisma, id);
@@ -94,54 +83,50 @@ export default async function RunDetailPage({
   const trace = foldTrace(events);
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-12">
-      <header className="mb-6">
-        <Link
-          href={`/w/${slug}/runs`}
-          className="text-xs text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
-        >
-          back to runs
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          {run.program.name}
-        </h1>
-        <p className="mt-1 font-mono text-xs text-zinc-500 dark:text-zinc-400">
-          {run.program.project.name} / {run.id}
-        </p>
-
-        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Fact label="status" value={run.status.toLowerCase()} />
+    <PageMain>
+      <PageHeader
+        eyebrow={
+          <>
+            <Link href={`/w/${slug}/runs`} className="ui-focus underline-offset-4 hover:underline">
+              runs
+            </Link>{" "}
+            / {run.program.project.name} / {run.id}
+          </>
+        }
+        title={run.program.name}
+        actions={<RunStatusBadge status={run.status} />}
+      >
+        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
           <Fact label="method" value={run.method} />
           <Fact label="seed" value={String(run.seed)} />
           <Fact label="proof" value={run.finalProof ?? "none"} />
-          <Fact label="started" value={WHEN.format(run.startedAt)} />
+          <Fact label="started" value={formatWhen(run.startedAt)} />
           <Fact label="took" value={elapsed(run.startedAt, run.finishedAt)} />
         </dl>
-      </header>
+      </PageHeader>
 
-      {run.status === "ABANDONED" ? (
-        <p className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-          This run was abandoned: the stream ended before the engine converged,
-          usually because the browser watching it went away. The trace below is
-          everything that was written down first, and it still reads as running
-          because that is where it stops.
-        </p>
-      ) : null}
+      <div className="space-y-4">
+        {run.status === "ABANDONED" ? (
+          <Callout tone="caution" title="This run was abandoned">
+            The stream ended before the engine converged, usually because the browser watching it
+            went away. The trace below is everything that was written down first, and it still
+            reads as running because that is where it stops.
+          </Callout>
+        ) : null}
 
-      {run.status === "FAILED" && run.error !== null ? (
-        <p className="mb-4 rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300">
-          {run.error}
-        </p>
-      ) : null}
+        {run.status === "FAILED" && run.error !== null ? (
+          <Callout tone="refused" title="The run failed">
+            {run.error}
+          </Callout>
+        ) : null}
 
-      {unreadable > 0 ? (
-        <p className="mb-4 rounded border border-dashed border-zinc-300 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-          {unreadable} stored {unreadable === 1 ? "event" : "events"} could not be
-          read back and {unreadable === 1 ? "is" : "are"} left out of the trace.
-        </p>
-      ) : null}
+        {unreadable > 0 ? (
+          <Callout>
+            {unreadable} stored {unreadable === 1 ? "event" : "events"} could not be read back and{" "}
+            {unreadable === 1 ? "is" : "are"} left out of the trace.
+          </Callout>
+        ) : null}
 
-      <div className="space-y-6">
         <FinalVerdict summary={trace.summary} />
 
         <TraceStepList
@@ -150,13 +135,17 @@ export default async function RunDetailPage({
           initialTac={trace.initialTac}
         />
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <TacListing lines={trace.initialTac} label="before" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="min-w-0">
+            <TacListing lines={trace.initialTac} label="before" />
+          </div>
           {trace.finalTac === null ? null : (
-            <TacListing lines={trace.finalTac} previous={trace.initialTac} label="after" />
+            <div className="min-w-0">
+              <TacListing lines={trace.finalTac} previous={trace.initialTac} label="after" />
+            </div>
           )}
         </div>
       </div>
-    </main>
+    </PageMain>
   );
 }

@@ -10,8 +10,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { Empty, Panel, PageHeading } from "@/components/shell/panel";
+import { PageMain } from "@/components/app/frame";
 import { Timestamp } from "@/components/shell/timestamp";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Callout, PageHeader, Panel } from "@/components/ui/surface";
 import { authorize } from "@/lib/authorize";
 import { categoryLabel } from "@/lib/categories";
 import { prisma } from "@/lib/db";
@@ -22,16 +25,13 @@ import {
 import { listProjects } from "@/lib/repositories/projects";
 import { requireWorkspace } from "@/lib/workspace";
 
-import { NewProgramForm } from "./new-program-form";
-import { NewProjectForm } from "./new-project-form";
+import { NewProgramDialog } from "./new-program-form";
+import { NewProjectDialog } from "./new-project-form";
 
 export const metadata: Metadata = {
   title: "Projects",
   description: "The projects in this workspace and the programs inside them.",
 };
-
-const TH = "px-3 py-1.5 font-medium";
-const TD = "px-3 py-1.5";
 
 function ProgramTable({
   programs,
@@ -40,59 +40,57 @@ function ProgramTable({
   programs: ProgramListEntry[];
   slug: string;
 }) {
+  const columns: Column<ProgramListEntry>[] = [
+    {
+      key: "name",
+      header: "Program",
+      cell: (program) => (
+        <Link
+          href={`/w/${slug}/programs/${program.id}`}
+          className="ui-focus font-medium underline-offset-4 hover:underline"
+        >
+          {program.name}
+        </Link>
+      ),
+    },
+    {
+      key: "category",
+      header: "Category",
+      cell: (program) => (
+        <span className="text-foreground/75">{categoryLabel(program.category)}</span>
+      ),
+    },
+    {
+      key: "runs",
+      header: "Runs",
+      align: "right",
+      mono: true,
+      cell: (program) => program._count.runs,
+    },
+    {
+      key: "author",
+      header: "Author",
+      wide: true,
+      cell: (program) => (
+        <span className="text-foreground/75">{program.author?.name ?? "unknown"}</span>
+      ),
+    },
+    {
+      key: "updated",
+      header: "Updated",
+      wide: true,
+      className: "text-xs",
+      cell: (program) => <Timestamp at={program.updatedAt} />,
+    },
+  ];
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-zinc-200 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          <tr>
-            <th scope="col" className={TH}>
-              Program
-            </th>
-            <th scope="col" className={TH}>
-              Category
-            </th>
-            <th scope="col" className={`${TH} text-right`}>
-              Runs
-            </th>
-            <th scope="col" className={TH}>
-              Author
-            </th>
-            <th scope="col" className={TH}>
-              Updated
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {programs.map((program) => (
-            <tr
-              key={program.id}
-              className="border-b border-zinc-100 last:border-b-0 dark:border-zinc-900"
-            >
-              <td className={TD}>
-                <Link
-                  href={`/w/${slug}/programs/${program.id}`}
-                  className="text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
-                >
-                  {program.name}
-                </Link>
-              </td>
-              <td className={`${TD} text-zinc-600 dark:text-zinc-400`}>
-                {categoryLabel(program.category)}
-              </td>
-              <td className={`${TD} text-right tabular-nums text-zinc-600 dark:text-zinc-400`}>
-                {program._count.runs}
-              </td>
-              <td className={`${TD} text-zinc-600 dark:text-zinc-400`}>
-                {program.author?.name ?? "unknown"}
-              </td>
-              <td className={`${TD} text-xs`}>
-                <Timestamp at={program.updatedAt} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      columns={columns}
+      rows={programs}
+      rowKey={(program) => program.id}
+      caption="Programs"
+    />
   );
 }
 
@@ -120,67 +118,76 @@ export default async function ProjectsPage({
   const mayAddProgram = authorize(principal, "program:create");
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
-      <PageHeading
+    <PageMain>
+      <PageHeader
+        eyebrow={workspace.name}
         title="Projects"
         lead="A project groups programs. A program is the source the engine optimizes."
+        actions={mayCreateProject ? <NewProjectDialog slug={slug} /> : null}
       />
 
-      {mayCreateProject ? (
-        <Panel title="New project">
-          <NewProjectForm slug={slug} />
-        </Panel>
-      ) : (
-        <p className="rounded border border-dashed border-zinc-300 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-          You are a viewer here, so you can read what is in this workspace but
-          not add to it.
-        </p>
+      {mayCreateProject ? null : (
+        <Callout className="mb-6">
+          You are a viewer here, so you can read what is in this workspace but not add to it.
+        </Callout>
       )}
 
-      <div className="mt-6 space-y-6">
-        {projects.length === 0 ? (
-          <p className="rounded border border-dashed border-zinc-300 px-3 py-10 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-            No projects yet.
-          </p>
-        ) : (
-          projects.map((project) => {
+      {projects.length === 0 ? (
+        <Panel>
+          <EmptyState
+            title="No projects yet"
+            action={
+              mayCreateProject ? (
+                <NewProjectDialog slug={slug} label="Create the first project" />
+              ) : null
+            }
+          >
+            Projects hold the programs you want to optimize. Make one, then paste a program into
+            it.
+          </EmptyState>
+        </Panel>
+      ) : (
+        <div className="space-y-6">
+          {projects.map((project) => {
             const inside = byProject.get(project.id) ?? [];
             return (
               <Panel
                 key={project.id}
                 title={project.name}
                 aside={
-                  <>
-                    {project._count.programs}{" "}
-                    {project._count.programs === 1 ? "program" : "programs"}
-                  </>
+                  <span className="flex items-center gap-3">
+                    <span>
+                      {project._count.programs}{" "}
+                      {project._count.programs === 1 ? "program" : "programs"}
+                    </span>
+                    {mayAddProgram ? (
+                      <NewProgramDialog
+                        slug={slug}
+                        projectId={project.id}
+                        projectName={project.name}
+                      />
+                    ) : null}
+                  </span>
                 }
               >
                 {project.description === null ? null : (
-                  <p className="border-b border-zinc-100 px-3 py-2 text-sm text-zinc-600 dark:border-zinc-900 dark:text-zinc-400">
+                  <p className="border-b border-line px-4 py-3 text-sm leading-relaxed text-foreground/75">
                     {project.description}
                   </p>
                 )}
 
                 {inside.length === 0 ? (
-                  <Empty>Nothing in this project yet.</Empty>
+                  <EmptyState compact title="Nothing in this project yet">
+                    {mayAddProgram ? "Add a program to start running it." : null}
+                  </EmptyState>
                 ) : (
                   <ProgramTable programs={inside} slug={slug} />
                 )}
-
-                {mayAddProgram ? (
-                  <details>
-                    <summary className="cursor-pointer border-t border-zinc-100 px-3 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:border-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">
-                      Add a program
-                    </summary>
-                    <NewProgramForm slug={slug} projectId={project.id} />
-                  </details>
-                ) : null}
               </Panel>
             );
-          })
-        )}
-      </div>
-    </main>
+          })}
+        </div>
+      )}
+    </PageMain>
   );
 }

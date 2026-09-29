@@ -56,17 +56,17 @@ export function TraceStepList({
       <p
         role="status"
         aria-live="polite"
-        className="mb-2 text-xs text-zinc-500 dark:text-zinc-400"
+        className="mb-2 text-xs text-muted"
       >
         {progress(status, steps)}
       </p>
 
       {steps.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 px-3 py-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+        <p className="rounded-xl border border-dashed border-foreground/15 px-3 py-6 text-center text-sm text-muted">
           No steps yet.
         </p>
       ) : (
-        <ol className="overflow-hidden rounded border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <ol className="glass glass--card overflow-hidden rounded-xl">
           {steps.map((step, index) => (
             <TraceStepRow key={step.index} step={step} previousTac={before[index]} />
           ))}

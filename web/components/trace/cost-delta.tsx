@@ -32,15 +32,15 @@ export function CostDelta({
   const delta = after.weighted_total - before.weighted_total;
   const percent = percentReduction(before.weighted_total, after.weighted_total);
   const tone = !applied
-    ? "text-zinc-400 dark:text-zinc-600"
+    ? "text-muted opacity-70"
     : delta < 0
-      ? "text-emerald-700 dark:text-emerald-400"
+      ? "text-accent"
       : delta > 0
-        ? "text-rose-700 dark:text-rose-400"
-        : "text-zinc-500 dark:text-zinc-400";
+        ? "text-refused"
+        : "text-muted";
 
   return (
-    <div className="font-mono text-xs tabular-nums">
+    <div className="font-terminal tabular-nums text-xs tabular-nums">
       <p className="sr-only">
         Weighted cost {before.weighted_total.toFixed(1)} to{" "}
         {after.weighted_total.toFixed(1)}, {signed(delta)}
@@ -51,11 +51,11 @@ export function CostDelta({
 
       <div aria-hidden>
         <div className="flex items-baseline gap-1.5">
-          <span className="text-zinc-500 dark:text-zinc-400">
+          <span className="text-muted">
             {before.weighted_total.toFixed(1)}
           </span>
-          <span className="text-zinc-400 dark:text-zinc-600">{"->"}</span>
-          <span className="text-zinc-800 dark:text-zinc-200">
+          <span className="text-muted opacity-70">{"->"}</span>
+          <span className="text-foreground">
             {after.weighted_total.toFixed(1)}
           </span>
           <span className={tone}>
@@ -63,7 +63,7 @@ export function CostDelta({
             {percent === null ? "" : ` (${signed(-percent)}%)`}
           </span>
         </div>
-        <div className="text-zinc-500 dark:text-zinc-500">
+        <div className="text-muted">
           {before.instruction_count} {"->"} {after.instruction_count} instructions,{" "}
           {before.temp_vars} {"->"} {after.temp_vars} temporaries
         </div>

@@ -10,7 +10,10 @@
 import type { ReactNode } from "react";
 
 import { WorkspaceHeader } from "@/components/shell/header";
+import { AppFrame } from "@/components/app/frame";
 import { authorize } from "@/lib/authorize";
+import { prisma } from "@/lib/db";
+import { listWorkspacesForUser } from "@/lib/repositories/workspaces";
 import { requireWorkspace } from "@/lib/workspace";
 
 export default async function WorkspaceLayout({
@@ -22,16 +25,22 @@ export default async function WorkspaceLayout({
 }) {
   const { workspace: slug } = await params;
   const { workspace, role, user, principal } = await requireWorkspace(slug);
+  const memberships = await listWorkspacesForUser(prisma, user.id);
 
   return (
-    <>
+    <AppFrame>
       <WorkspaceHeader
         workspace={workspace}
         role={role}
         user={user}
         mayAudit={authorize(principal, "auditLog:view")}
+        workspaces={memberships.map((entry) => ({
+          slug: entry.workspace.slug,
+          name: entry.workspace.name,
+          role: entry.role,
+        }))}
       />
       {children}
-    </>
+    </AppFrame>
   );
 }

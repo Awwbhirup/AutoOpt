@@ -15,15 +15,15 @@ const BASE =
 
 const VERDICT_STYLE: Record<VerificationVerdict, string> = {
   proven_equivalent:
-    "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
+    "ui-tone-kept",
   tests_passed:
-    "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
+    "ui-tone-kept",
   // Set apart from a proof on purpose: the engine accepts on it, but it is only
   // true up to the unrolling bound.
   unknown_bounded:
-    "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300",
+    "ui-tone-caution",
   counterexample_found:
-    "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300",
+    "ui-tone-refused",
 };
 
 const VERDICT_MARKER: Record<VerificationVerdict, string> = {
@@ -36,7 +36,7 @@ const VERDICT_MARKER: Record<VerificationVerdict, string> = {
 export function VerificationBadge({ verdict }: { verdict: VerificationVerdict }) {
   return (
     <span className={`${BASE} ${VERDICT_STYLE[verdict]}`}>
-      <span aria-hidden className="font-mono">
+      <span aria-hidden className="font-terminal tabular-nums">
         {VERDICT_MARKER[verdict]}
       </span>
       {verdictLabel(verdict)}
@@ -52,17 +52,17 @@ export function OutcomeBadge({
   rejectReason: RejectReason | null;
 }) {
   const style = accepted
-    ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
-    : "border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+    ? "ui-tone-kept"
+    : "ui-tone-neutral";
 
   return (
     <span className={`${BASE} ${style}`}>
-      <span aria-hidden className="font-mono">
+      <span aria-hidden className="font-terminal tabular-nums">
         {accepted ? "+" : "-"}
       </span>
       {accepted ? "accepted" : "rejected"}
       {!accepted && rejectReason !== null ? (
-        <span className="font-normal text-zinc-500 dark:text-zinc-400">
+        <span className="font-normal text-muted">
           : {rejectLabel(rejectReason)}
         </span>
       ) : null}
@@ -74,9 +74,9 @@ export function OutcomeBadge({
 export function PendingBadge({ label }: { label: string }) {
   return (
     <span
-      className={`${BASE} border-dashed border-zinc-300 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400`}
+      className={`${BASE} border-dashed border-foreground/15 text-muted`}
     >
-      <span aria-hidden className="font-mono">
+      <span aria-hidden className="font-terminal tabular-nums">
         .
       </span>
       {label}

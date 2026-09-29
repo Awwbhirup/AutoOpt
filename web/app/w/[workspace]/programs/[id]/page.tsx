@@ -11,10 +11,13 @@ import type { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { Empty, Panel } from "@/components/shell/panel";
+import { PageMain } from "@/components/app/frame";
 import { RunProgram } from "@/components/shell/run-program";
 import { RunTable } from "@/components/shell/run-table";
 import { Timestamp } from "@/components/shell/timestamp";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader, Panel } from "@/components/ui/surface";
 import { authorize } from "@/lib/authorize";
 import { categoryLabel } from "@/lib/categories";
 import { prisma } from "@/lib/db";
@@ -39,11 +42,11 @@ function Features({ features }: { features: Prisma.JsonValue }) {
   if (entries.length === 0) return null;
 
   return (
-    <dl className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2 text-xs">
+    <dl className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-4 py-3 text-xs">
       {entries.map(([name, value]) => (
-        <div key={name} className="flex gap-1">
-          <dt className="text-zinc-500 dark:text-zinc-400">{name.replace(/_/g, " ")}</dt>
-          <dd className="font-mono tabular-nums text-zinc-900 dark:text-zinc-100">
+        <div key={name} className="flex gap-1.5">
+          <dt className="text-muted">{name.replace(/_/g, " ")}</dt>
+          <dd className="font-terminal tabular-nums text-foreground">
             {String(value)}
           </dd>
         </div>
@@ -56,11 +59,14 @@ function SourceListing({ source }: { source: string }) {
   const lines = source.replace(/\n+$/, "").split("\n");
 
   return (
-    <pre className="overflow-x-auto px-3 py-2 font-mono text-xs leading-5 text-zinc-900 dark:text-zinc-100">
+    <pre
+      data-lenis-prevent
+      className="font-terminal tabular-nums overflow-x-auto overscroll-x-contain px-4 py-3 text-xs leading-5"
+    >
       <code>
         {lines.map((line, index) => (
           <span key={index} className="grid grid-cols-[2.5rem_1fr]">
-            <span className="select-none pr-3 text-right text-zinc-400 tabular-nums dark:text-zinc-600">
+            <span className="pr-3 text-right text-muted opacity-70 select-none">
               {index + 1}
             </span>
             {/* A blank line still needs a row, and an empty span has no height. */}
@@ -92,60 +98,56 @@ export default async function ProgramPage({
   const mayRun = authorize(principal, "run:start");
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
-      <header className="mb-6">
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          <Link
-            href={`/w/${slug}/projects`}
-            className="underline-offset-2 hover:underline"
-          >
-            {program.project.name}
-          </Link>
-        </p>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          {program.name}
-        </h1>
-        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
-          <span>{categoryLabel(program.category)}</span>
+    <PageMain>
+      <PageHeader
+        eyebrow={
+          <>
+            <Link href={`/w/${slug}/projects`} className="ui-focus underline-offset-4 hover:underline">
+              projects
+            </Link>{" "}
+            / {program.project.name}
+          </>
+        }
+        title={program.name}
+      >
+        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-foreground/75">
+          <Badge tone="info">{categoryLabel(program.category)}</Badge>
           <span>added by {program.author?.name ?? "someone since removed"}</span>
           <Timestamp at={program.createdAt} />
           {program.uploadName === null ? null : (
-            <span className="font-mono text-xs">{program.uploadName}</span>
+            <span className="font-terminal tabular-nums text-xs">{program.uploadName}</span>
           )}
         </p>
-      </header>
+      </PageHeader>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
         <Panel title="Source" aside={`${program.source.length} characters`}>
           <SourceListing source={program.source} />
           <Features features={program.features} />
         </Panel>
 
-        <div className="flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
           {mayRun ? (
             <Panel title="Optimize">
-              <div className="px-3 py-3">
+              <div className="px-4 py-4">
                 <RunProgram programId={program.id} />
               </div>
             </Panel>
           ) : null}
 
-          <Panel
-            title="Runs"
-            aside={runs.length === 0 ? undefined : `${runs.length} shown`}
-          >
+          <Panel title="Runs" aside={runs.length === 0 ? undefined : `${runs.length} shown`}>
             {runs.length === 0 ? (
-              <Empty>
+              <EmptyState compact title="No runs yet">
                 {mayRun
-                  ? "No runs yet. Pick a method above to make one."
+                  ? "Pick a method above to make the first one."
                   : "This program has not been run yet."}
-              </Empty>
+              </EmptyState>
             ) : (
               <RunTable runs={runs} slug={slug} showProgram={false} />
             )}
           </Panel>
         </div>
       </div>
-    </main>
+    </PageMain>
   );
 }

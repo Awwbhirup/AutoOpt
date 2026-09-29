@@ -33,9 +33,9 @@ export function TacListing({
   const gap = (key: string, removed: number): ReactNode => (
     <li
       key={key}
-      className="flex items-center gap-2 border-l-2 border-rose-400 bg-rose-50/60 px-2 py-0.5 text-zinc-500 dark:border-rose-700 dark:bg-rose-950/30 dark:text-zinc-400"
+      className="flex items-center gap-2 border-l-2 border-refused bg-refused-soft px-2 py-0.5 text-muted"
     >
-      <span aria-hidden className="w-6 shrink-0 text-right text-zinc-400 dark:text-zinc-600">
+      <span aria-hidden className="w-6 shrink-0 text-right text-muted opacity-70">
         --
       </span>
       <span className="italic">
@@ -53,18 +53,18 @@ export function TacListing({
         key={index}
         className={
           mark
-            ? "flex gap-2 border-l-2 border-amber-400 bg-amber-50 px-2 py-0.5 dark:border-amber-600 dark:bg-amber-950/40"
+            ? "flex gap-2 border-l-2 border-flag bg-flag/10 px-2 py-0.5"
             : "flex gap-2 border-l-2 border-transparent px-2 py-0.5"
         }
       >
         <span
           aria-hidden
-          className="w-6 shrink-0 select-none text-right text-zinc-400 tabular-nums dark:text-zinc-600"
+          className="w-6 shrink-0 select-none text-right text-muted tabular-nums opacity-70"
         >
           {index + 1}
         </span>
         {mark ? <span className="sr-only">changed line {index + 1}: </span> : null}
-        <span className="whitespace-pre text-zinc-800 dark:text-zinc-200">{line}</span>
+        <span className="whitespace-pre text-foreground">{line}</span>
       </li>,
     );
   });
@@ -73,16 +73,17 @@ export function TacListing({
   return (
     <figure className="m-0">
       {label === undefined ? null : (
-        <figcaption className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+        <figcaption className="mb-1 text-xs font-medium text-muted">
           {label}
         </figcaption>
       )}
       {lines.length === 0 ? (
-        <p className="px-2 py-1 font-mono text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="px-2 py-1 font-terminal tabular-nums text-xs text-muted">
           no listing yet
         </p>
       ) : (
-        <ol className="overflow-x-auto rounded border border-zinc-200 bg-white py-1 font-mono text-xs leading-5 dark:border-zinc-800 dark:bg-zinc-950">
+        <ol data-lenis-prevent
+          className="font-terminal tabular-nums overflow-x-auto overscroll-x-contain rounded-lg border border-line bg-foreground/5 py-1.5 text-xs leading-5">
           {rows}
         </ol>
       )}

@@ -12,7 +12,9 @@
 
 import { notFound } from "next/navigation";
 
-import { Empty, PageHeading, Panel } from "@/components/shell/panel";
+import { PageMain } from "@/components/app/frame";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader, Panel } from "@/components/ui/surface";
 import { Timestamp } from "@/components/shell/timestamp";
 import { authorize } from "@/lib/authorize";
 import { prisma } from "@/lib/db";
@@ -62,8 +64,9 @@ export default async function AuditPage({
   const entries = await listEntries(prisma, workspace.id);
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
-      <PageHeading
+    <PageMain>
+      <PageHeader
+        eyebrow={workspace.name}
         title="Audit log"
         lead="Changes to who is in this workspace and what they may do."
       />
@@ -73,21 +76,23 @@ export default async function AuditPage({
         aside={entries.length === 0 ? undefined : `${entries.length} shown`}
       >
         {entries.length === 0 ? (
-          <Empty>Nothing has been recorded yet.</Empty>
+          <EmptyState compact title="Nothing has been recorded yet">
+            Members being added or removed, and role changes, are written here.
+          </EmptyState>
         ) : (
-          <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          <ul className="divide-y divide-line">
             {entries.map((entry) => (
-              <li key={entry.id} className="flex flex-wrap gap-x-2 px-3 py-2 text-sm">
-                <span className="text-zinc-900 dark:text-zinc-100">
+              <li key={entry.id} className="flex flex-wrap gap-x-2 px-4 py-3 text-sm">
+                <span className="text-foreground">
                   {entry.actor?.name ?? entry.actor?.email ?? "someone since removed"}
                 </span>
-                <span className="text-zinc-500 dark:text-zinc-400">
+                <span className="text-muted">
                   {WORDING[entry.action] ?? entry.action}
                 </span>
-                <span className="text-zinc-900 dark:text-zinc-100">
+                <span className="text-foreground">
                   {detail(entry)}
                 </span>
-                <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">
+                <span className="ml-auto text-xs text-muted">
                   <Timestamp at={entry.createdAt} />
                 </span>
               </li>
@@ -95,6 +100,6 @@ export default async function AuditPage({
           </ul>
         )}
       </Panel>
-    </main>
+    </PageMain>
   );
 }

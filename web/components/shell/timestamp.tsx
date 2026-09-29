@@ -12,14 +12,14 @@ const WHEN = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
 });
 
+export function formatWhen(at: Date): string {
+  return WHEN.format(at);
+}
+
 export function Timestamp({ at }: { at: Date }) {
   const iso = at.toISOString();
   return (
-    <time
-      dateTime={iso}
-      title={iso}
-      className="whitespace-nowrap tabular-nums text-zinc-600 dark:text-zinc-400"
-    >
+    <time dateTime={iso} title={iso} className="whitespace-nowrap tabular-nums text-foreground/75">
       {WHEN.format(at)}
     </time>
   );

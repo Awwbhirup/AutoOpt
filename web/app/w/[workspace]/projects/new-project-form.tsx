@@ -1,95 +1,95 @@
 "use client";
 
 /**
- * The create-project form.
+ * The create-project dialog.
  *
  * The workspace travels as its slug, the same string the URL carries, and the
- * action resolves it again rather than believing a hidden id. Whether the form
- * is shown at all is decided on the server; this is convenience, not the check.
+ * action resolves it again rather than believing a hidden id. Whether the
+ * button is shown at all is decided on the server; this is convenience, not
+ * the check.
+ *
+ * The action is wrapped so that success closes the dialog and says so, in the
+ * same transition that revalidates the list behind it. A refusal leaves the
+ * dialog open with the fields as typed.
  */
 
 import { useActionState, useState } from "react";
 
-import { IDLE } from "@/lib/actions/form";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Field, Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
+import { IDLE, type ActionState } from "@/lib/actions/form";
 import { createProject } from "@/lib/actions/projects";
 
-const FIELD =
-  "w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100";
+export function NewProjectDialog({
+  slug,
+  label = "New project",
+  variant = "primary",
+}: {
+  slug: string;
+  label?: string;
+  variant?: "primary" | "secondary";
+}) {
+  const [open, setOpen] = useState(false);
+  const toast = useToast();
 
-export function NewProjectForm({ slug }: { slug: string }) {
-  const [state, submit, pending] = useActionState(createProject, IDLE);
-
-  // Kept rather than read off the state, which goes back to null on the next
-  // refusal. Keying on the state itself would remount the form on that
-  // refusal too, clearing the fields the person is being asked to correct.
-  const [lastCreated, setLastCreated] = useState<string | null>(null);
-  if (state.createdId !== null && state.createdId !== lastCreated) {
-    setLastCreated(state.createdId);
-  }
+  const [state, submit, pending] = useActionState(
+    async (previous: ActionState, form: FormData) => {
+      const next = await createProject(previous, form);
+      if (next.createdId !== null) {
+        setOpen(false);
+        toast({ title: "Project created", description: String(form.get("name") ?? ""), tone: "kept" });
+      }
+      return next;
+    },
+    IDLE,
+  );
 
   return (
-    <form
-      // Remounted on success, which is what clears the fields. The state above
-      // survives it, so the confirmation below still has the new id.
-      key={lastCreated ?? "new"}
-      action={submit}
-      className="flex flex-wrap items-end gap-2 px-3 py-3"
-    >
-      <input type="hidden" name="workspace" value={slug} />
-
-      <div className="min-w-[12rem] flex-1">
-        <label
-          htmlFor="project-name"
-          className="block text-xs text-zinc-500 dark:text-zinc-400"
-        >
-          Name
-        </label>
-        <input
-          id="project-name"
-          name="name"
-          required
-          maxLength={80}
-          autoComplete="off"
-          placeholder="Front end"
-          className={FIELD}
-        />
-      </div>
-
-      <div className="min-w-[16rem] flex-[2]">
-        <label
-          htmlFor="project-description"
-          className="block text-xs text-zinc-500 dark:text-zinc-400"
-        >
-          Description
-        </label>
-        <input
-          id="project-description"
-          name="description"
-          maxLength={500}
-          autoComplete="off"
-          placeholder="Optional"
-          className={FIELD}
-        />
-      </div>
-
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant={variant}>{label}</Button>
+      </DialogTrigger>
+      <DialogContent
+        title="New project"
+        description="A project groups programs, for example the ones from one course or one codebase."
       >
-        {pending ? "Creating" : "Create project"}
-      </button>
+        <form action={submit} className="flex flex-col gap-4">
+          <input type="hidden" name="workspace" value={slug} />
 
-      {state.error === null ? null : (
-        <p role="alert" className="w-full text-sm text-rose-700 dark:text-rose-400">
-          {state.error}
-        </p>
-      )}
-      {state.createdId === null ? null : (
-        <p className="w-full text-sm text-zinc-600 dark:text-zinc-400">
-          Created. It is in the list below.
-        </p>
-      )}
-    </form>
+          <Field label="Name" htmlFor="project-name" error={state.error}>
+            <Input
+              id="project-name"
+              name="name"
+              required
+              maxLength={80}
+              autoComplete="off"
+              placeholder="Front end"
+              aria-invalid={state.error !== null || undefined}
+              aria-describedby={state.error ? "project-name-error" : undefined}
+            />
+          </Field>
+
+          <Field label="Description" htmlFor="project-description" hint="Optional, up to 500 characters.">
+            <Input
+              id="project-description"
+              name="description"
+              maxLength={500}
+              autoComplete="off"
+            />
+          </Field>
+
+          <div className="mt-2 flex justify-end gap-2">
+            <DialogClose asChild>
+              <Button variant="ghost">Cancel</Button>
+            </DialogClose>
+            <Button type="submit" variant="primary" pending={pending}>
+              Create project
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

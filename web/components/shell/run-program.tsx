@@ -12,6 +12,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { FinalVerdict } from "@/components/trace/final-verdict";
+import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/input";
+import { Callout } from "@/components/ui/surface";
+import { useToast } from "@/components/ui/toast";
 import { TraceStepList } from "@/components/trace/step-list";
 import { streamedEvent, type StreamedEvent } from "@/lib/events";
 import { foldTrace } from "@/lib/trace";
@@ -32,6 +36,7 @@ export function RunProgram({ programId }: { programId: string }) {
   const [running, setRunning] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
+  const toast = useToast();
 
   const trace = useMemo(() => foldTrace(events), [events]);
 
@@ -54,13 +59,16 @@ export function RunProgram({ programId }: { programId: string }) {
 
       if (!response.ok || !response.body) {
         const detail = await response.json().catch(() => null);
-        setProblem(detail?.error ?? "The run could not be started.");
+        const message = detail?.error ?? "The run could not be started.";
+        setProblem(message);
+        toast({ title: "Run not started", description: message, tone: "refused" });
         return;
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let ending: StreamedEvent["kind"] | null = null;
 
       for (;;) {
         const { done, value } = await reader.read();
@@ -74,7 +82,10 @@ export function RunProgram({ programId }: { programId: string }) {
           buffer = buffer.slice(newline + 1);
           if (line) {
             const parsed = streamedEvent.safeParse(JSON.parse(line));
-            if (parsed.success) arrived.push(parsed.data);
+            if (parsed.success) {
+              arrived.push(parsed.data);
+              ending = parsed.data.kind;
+            }
           }
           newline = buffer.indexOf("\n");
         }
@@ -85,53 +96,54 @@ export function RunProgram({ programId }: { programId: string }) {
       // The run is in the database now, so the history above this needs to
       // catch up.
       router.refresh();
+      if (ending === "run_failed") {
+        toast({ title: "Run failed", description: "The trace shows where it stopped.", tone: "refused" });
+      } else {
+        toast({ title: "Run saved", description: "It is in the history below.", tone: "kept" });
+      }
     } catch (error) {
       if (!controller.signal.aborted) {
-        setProblem(error instanceof Error ? error.message : "Something went wrong.");
+        const message = error instanceof Error ? error.message : "Something went wrong.";
+        setProblem(message);
+        toast({ title: "Run interrupted", description: message, tone: "refused" });
       }
     } finally {
       setRunning(false);
     }
-  }, [programId, method, router]);
+  }, [programId, method, router, toast]);
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <label htmlFor="method" className="sr-only">
           Search method
         </label>
-        <select
+        <Select
           id="method"
           value={method}
           onChange={(event) => setMethod(event.target.value)}
           disabled={running}
-          className="rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+          className="min-w-44"
         >
           {METHODS.map((entry) => (
             <option key={entry.value} value={entry.value}>
               {entry.label}
             </option>
           ))}
-        </select>
+        </Select>
 
-        <button
-          type="button"
-          onClick={start}
-          disabled={running}
-          className="rounded bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          {running ? "Running" : "Run"}
-        </button>
+        <Button variant="primary" onClick={start} pending={running}>
+          Run
+        </Button>
+        {running ? (
+          <span className="text-xs text-muted">Streaming the trace as the engine works.</span>
+        ) : null}
       </div>
 
-      {problem ? (
-        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-          {problem}
-        </p>
-      ) : null}
+      {problem ? <Callout tone="refused">{problem}</Callout> : null}
 
       {events.length > 0 ? (
-        <div className="flex flex-col gap-4">
+        <div className="ui-reveal flex flex-col gap-4">
           <FinalVerdict summary={trace.summary} />
           <TraceStepList
             steps={trace.steps}

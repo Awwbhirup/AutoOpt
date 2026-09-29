@@ -48,12 +48,12 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-8 border-t border-zinc-200 pt-10 dark:border-zinc-800">
-      <h2 className="text-xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+    <section id={id} className="scroll-mt-8 border-t border-line pt-10">
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">
         {title}
       </h2>
       {lead ? (
-        <p className="mt-3 max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">{lead}</p>
+        <p className="mt-3 max-w-prose leading-7 text-foreground/75">{lead}</p>
       ) : null}
       <div className="mt-6 space-y-6">{children}</div>
     </section>
@@ -63,11 +63,11 @@ function Section({
 function Listing({ label, children }: { label: string; children: string }) {
   return (
     <figure className="space-y-2">
-      <figcaption className="font-mono text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-500">
+      <figcaption className="font-terminal text-xs uppercase tracking-wider text-muted">
         {label}
       </figcaption>
-      <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 p-4 text-[13px] leading-6 text-zinc-800 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
-        <code className="font-mono">{children}</code>
+      <pre className="overflow-x-auto rounded-lg border border-line bg-foreground/5 p-4 text-[13px] leading-6 text-foreground">
+        <code className="font-terminal">{children}</code>
       </pre>
     </figure>
   );
@@ -76,22 +76,21 @@ function Listing({ label, children }: { label: string; children: string }) {
 function Term({ term, children }: { term: string; children: ReactNode }) {
   return (
     <div className="grid gap-1 sm:grid-cols-[10rem_1fr] sm:gap-6">
-      <dt className="font-medium text-zinc-900 dark:text-zinc-100">{term}</dt>
-      <dd className="max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">{children}</dd>
+      <dt className="font-medium text-foreground">{term}</dt>
+      <dd className="max-w-prose leading-7 text-foreground/75">{children}</dd>
     </div>
   );
 }
 
 export default function LanguagePage() {
   return (
-    <div className="flex-1 bg-white px-6 py-16 font-sans text-zinc-800 dark:bg-black dark:text-zinc-200">
+    <div className="flex-1 px-4 pt-10 pb-20 sm:px-6">
       <main className="mx-auto w-full max-w-3xl">
         <header>
-          <p className="font-mono text-xs uppercase tracking-wider text-zinc-500">AutoOpt</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+                    <h1 className="font-hero text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             The supported language
           </h1>
-          <p className="mt-4 max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+          <p className="mt-4 max-w-prose leading-7 text-foreground/75">
             AutoOpt optimizes MiniLang, a small imperative language with one type and one
             observable effect. Every claim the project makes about correctness is scoped to
             exactly what is on this page, so it describes what the engine implements today and
@@ -102,7 +101,7 @@ export default function LanguagePage() {
               <a
                 key={section.id}
                 href={`#${section.id}`}
-                className="text-zinc-500 underline-offset-4 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-50"
+                className="text-muted underline-offset-4 hover:text-foreground hover:underline"
               >
                 {section.title}
               </a>
@@ -116,21 +115,21 @@ export default function LanguagePage() {
             title="What the language supports"
             lead="Integers, assignment, if, while, for, and print. The grammar below is the whole of it, lowest precedence first."
           >
-            <div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
-              <table className="w-full border-collapse text-left font-mono text-[13px]">
+            <div className="overflow-x-auto rounded-md border border-line">
+              <table className="w-full border-collapse text-left font-terminal text-[13px]">
                 <tbody>
                   {GRAMMAR.map((production) => (
                     <tr
                       key={production.name}
-                      className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
+                      className="border-b border-line last:border-0"
                     >
                       <th
                         scope="row"
-                        className="w-40 px-4 py-2 align-top font-normal text-zinc-500 dark:text-zinc-500"
+                        className="w-40 px-4 py-2 align-top font-normal text-muted"
                       >
                         {production.name}
                       </th>
-                      <td className="px-4 py-2 align-top text-zinc-800 dark:text-zinc-200">
+                      <td className="px-4 py-2 align-top text-foreground">
                         {production.rule}
                       </td>
                     </tr>
@@ -139,22 +138,22 @@ export default function LanguagePage() {
               </table>
             </div>
 
-            <p className="max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+            <p className="max-w-prose leading-7 text-foreground/75">
               The keywords are{" "}
-              <span className="font-mono text-zinc-800 dark:text-zinc-200">
+              <span className="font-terminal text-foreground">
                 {KEYWORDS.join(", ")}
               </span>
               . Anything else that lexes as a name is an identifier.
             </p>
 
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted">
                 Operators
               </h3>
-              <div className="mt-3 overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
+              <div className="mt-3 overflow-x-auto rounded-md border border-line">
                 <table className="w-full border-collapse text-left text-sm">
-                  <thead className="text-xs uppercase tracking-wider text-zinc-500">
-                    <tr className="border-b border-zinc-200 dark:border-zinc-800">
+                  <thead className="text-xs uppercase tracking-wider text-muted">
+                    <tr className="border-b border-line">
                       <th scope="col" className="px-4 py-2 font-medium">
                         Level
                       </th>
@@ -173,16 +172,16 @@ export default function LanguagePage() {
                     {OPERATORS.map((level) => (
                       <tr
                         key={level.level}
-                        className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
+                        className="border-b border-line last:border-0"
                       >
-                        <td className="whitespace-nowrap px-4 py-2 align-top text-zinc-500">
+                        <td className="whitespace-nowrap px-4 py-2 align-top text-muted">
                           {level.level}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2 align-top font-mono text-zinc-800 dark:text-zinc-200">
+                        <td className="whitespace-nowrap px-4 py-2 align-top font-terminal text-foreground">
                           {level.operators}
                         </td>
-                        <td className="px-4 py-2 align-top text-zinc-500">{level.associativity}</td>
-                        <td className="px-4 py-2 align-top text-zinc-600 dark:text-zinc-400">
+                        <td className="px-4 py-2 align-top text-muted">{level.associativity}</td>
+                        <td className="px-4 py-2 align-top text-foreground/75">
                           {level.note}
                         </td>
                       </tr>
@@ -193,19 +192,19 @@ export default function LanguagePage() {
             </div>
 
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted">
                 Statements
               </h3>
               <dl className="mt-4 space-y-5">
                 {STATEMENTS.map((statement) => (
                   <div key={statement.form} className="grid gap-1 sm:grid-cols-[14rem_1fr] sm:gap-6">
                     <dt>
-                      <span className="font-mono text-sm text-zinc-900 dark:text-zinc-100">
+                      <span className="font-terminal text-sm text-foreground">
                         {statement.syntax}
                       </span>
-                      <span className="block text-xs text-zinc-500">{statement.form}</span>
+                      <span className="block text-xs text-muted">{statement.form}</span>
                     </dt>
-                    <dd className="max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+                    <dd className="max-w-prose leading-7 text-foreground/75">
                       {statement.note}
                     </dd>
                   </div>
@@ -214,7 +213,7 @@ export default function LanguagePage() {
             </div>
 
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted">
                 Semantics
               </h3>
               <dl className="mt-4 space-y-5">
@@ -235,11 +234,11 @@ export default function LanguagePage() {
             <Listing label="source">{EXAMPLE.source}</Listing>
             <Listing label="three-address code, before optimization">{EXAMPLE.lowered}</Listing>
 
-            <p className="max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+            <p className="max-w-prose leading-7 text-foreground/75">
               Lowering folds nothing, so the redundancy is all still there: a doubling, a
               subtraction of a value from itself sitting inside the loop, an addition of the zero
               that comes out of it, and a chain of copies. The{" "}
-              <span className="font-mono text-sm">greedy</span> method takes the first move that
+              <span className="font-terminal text-sm">greedy</span> method takes the first move that
               lowers cost, and on this program it finds two of them and then stops with cost at{" "}
               {EXAMPLE.greedy.cost.toFixed(3)} of the original, having accepted{" "}
               {EXAMPLE.greedy.accepted} of {EXAMPLE.greedy.proposals} proposals.
@@ -247,11 +246,11 @@ export default function LanguagePage() {
 
             <Listing label={`after ${EXAMPLE.greedy.method}`}>{EXAMPLE.greedy.listing}</Listing>
 
-            <p className="max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+            <p className="max-w-prose leading-7 text-foreground/75">
               Nothing was wrong with the moves it skipped. Propagating a copy does not remove an
               instruction by itself, so it fails the cost gate on its own even though it is what
               makes the removal possible one step later. A method that can sit on a plateau gets
-              through the chain: <span className="font-mono text-sm">astar</span> accepts{" "}
+              through the chain: <span className="font-terminal text-sm">astar</span> accepts{" "}
               {EXAMPLE.astar.accepted} transformations out of {EXAMPLE.astar.proposals} proposals
               and finishes at {EXAMPLE.astar.cost.toFixed(3)}, with the loop body down to the two
               instructions that do the work.
@@ -259,9 +258,9 @@ export default function LanguagePage() {
 
             <Listing label={`after ${EXAMPLE.astar.method}`}>{EXAMPLE.astar.listing}</Listing>
 
-            <p className="max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+            <p className="max-w-prose leading-7 text-foreground/75">
               In order, the accepted transformations were{" "}
-              <span className="font-mono text-sm">{EXAMPLE.applied.join(", ")}</span>. Every one of
+              <span className="font-terminal text-sm">{EXAMPLE.applied.join(", ")}</span>. Every one of
               them was verified against the original before it was kept, and the final program was
               compared against the original again on the thorough profile.
             </p>
@@ -275,12 +274,12 @@ export default function LanguagePage() {
             <ol className="space-y-5">
               {PIPELINE.map((stage, index) => (
                 <li key={stage.title} className="grid gap-1 sm:grid-cols-[2rem_1fr] sm:gap-4">
-                  <span className="font-mono text-sm text-zinc-400 dark:text-zinc-600">
+                  <span className="font-terminal text-sm text-muted/70">
                     {String(index + 1).padStart(2, "0")}
                   </span>
                   <div>
-                    <h3 className="font-medium text-zinc-900 dark:text-zinc-100">{stage.title}</h3>
-                    <p className="mt-1 max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+                    <h3 className="font-medium text-foreground">{stage.title}</h3>
+                    <p className="mt-1 max-w-prose leading-7 text-foreground/75">
                       {stage.detail}
                     </p>
                   </div>
@@ -298,25 +297,25 @@ export default function LanguagePage() {
               {TRANSFORMATIONS.map((transformation) => (
                 <article
                   key={transformation.kind}
-                  className="rounded-md border border-zinc-200 p-5 dark:border-zinc-800"
+                  className="glass glass--card rounded-xl p-5"
                 >
-                  <h3 className="font-medium text-zinc-900 dark:text-zinc-100">
+                  <h3 className="font-medium text-foreground">
                     {transformation.name}
                   </h3>
-                  <p className="mt-1 font-mono text-xs text-zinc-500">{transformation.kind}</p>
-                  <p className="mt-3 max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+                  <p className="mt-1 font-terminal text-xs text-muted">{transformation.kind}</p>
+                  <p className="mt-3 max-w-prose leading-7 text-foreground/75">
                     {transformation.description}
                   </p>
                   <dl className="mt-4 space-y-2 text-sm">
                     <div className="sm:flex sm:gap-3">
-                      <dt className="w-32 shrink-0 text-zinc-500">preconditions</dt>
-                      <dd className="font-mono text-[13px] text-zinc-700 dark:text-zinc-300">
+                      <dt className="w-32 shrink-0 text-muted">preconditions</dt>
+                      <dd className="font-terminal text-[13px] text-foreground/80">
                         {transformation.preconditions}
                       </dd>
                     </div>
                     <div className="sm:flex sm:gap-3">
-                      <dt className="w-32 shrink-0 text-zinc-500">effects</dt>
-                      <dd className="font-mono text-[13px] text-zinc-700 dark:text-zinc-300">
+                      <dt className="w-32 shrink-0 text-muted">effects</dt>
+                      <dd className="font-terminal text-[13px] text-foreground/80">
                         {transformation.effects}
                       </dd>
                     </div>
@@ -334,30 +333,30 @@ export default function LanguagePage() {
             {VERIFICATION.map((channel) => (
               <article key={channel.method} className="space-y-4">
                 <div>
-                  <h3 className="font-medium text-zinc-900 dark:text-zinc-100">{channel.title}</h3>
-                  <p className="mt-1 font-mono text-xs text-zinc-500">
+                  <h3 className="font-medium text-foreground">{channel.title}</h3>
+                  <p className="mt-1 font-terminal text-xs text-muted">
                     {channel.method} | verdicts: {channel.verdicts.join(", ")}
                   </p>
                 </div>
-                <p className="max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+                <p className="max-w-prose leading-7 text-foreground/75">
                   {channel.summary}
                 </p>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
                       Establishes
                     </h4>
-                    <ul className="mt-2 space-y-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                    <ul className="mt-2 space-y-2 text-sm leading-6 text-foreground/75">
                       {channel.proves.map((item) => (
                         <li key={item}>{item}</li>
                       ))}
                     </ul>
                   </div>
                   <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
                       Does not establish
                     </h4>
-                    <ul className="mt-2 space-y-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                    <ul className="mt-2 space-y-2 text-sm leading-6 text-foreground/75">
                       {channel.doesNotProve.map((item) => (
                         <li key={item}>{item}</li>
                       ))}
@@ -376,10 +375,10 @@ export default function LanguagePage() {
             <dl className="space-y-5">
               {LIMITATIONS.map((limitation) => (
                 <div key={limitation.title}>
-                  <dt className="font-medium text-zinc-900 dark:text-zinc-100">
+                  <dt className="font-medium text-foreground">
                     {limitation.title}
                   </dt>
-                  <dd className="mt-1 max-w-prose leading-7 text-zinc-600 dark:text-zinc-400">
+                  <dd className="mt-1 max-w-prose leading-7 text-foreground/75">
                     {limitation.detail}
                   </dd>
                 </div>

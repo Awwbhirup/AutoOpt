@@ -7,7 +7,11 @@
  * refused.
  */
 
-import { Empty, PageHeading, Panel } from "@/components/shell/panel";
+import Link from "next/link";
+
+import { PageMain } from "@/components/app/frame";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader, Panel } from "@/components/ui/surface";
 import { Timestamp } from "@/components/shell/timestamp";
 import { authorize } from "@/lib/authorize";
 import { prisma } from "@/lib/db";
@@ -36,8 +40,9 @@ export default async function SettingsPage({
   const mayAudit = authorize(principal, "auditLog:view");
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
-      <PageHeading
+    <PageMain>
+      <PageHeader
+        eyebrow={workspace.name}
         title="People"
         lead={`Roles decide what each person may do here. You are ${role.toLowerCase()}.`}
       />
@@ -54,9 +59,9 @@ export default async function SettingsPage({
           aside={`${members.length} ${members.length === 1 ? "person" : "people"}`}
         >
           {members.length === 0 ? (
-            <Empty>Nobody is in this workspace yet.</Empty>
+            <EmptyState compact title="Nobody is in this workspace yet" />
           ) : (
-            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <ul className="divide-y divide-line">
               {members.map((member) => {
                 const isSelf = member.userId === principal.userId;
                 // The rule the actions enforce, mirrored here only to explain
@@ -69,18 +74,18 @@ export default async function SettingsPage({
                 return (
                   <li
                     key={member.id}
-                    className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm text-zinc-900 dark:text-zinc-100">
+                      <p className="truncate text-sm text-foreground">
                         {member.user.name ?? member.user.email}
                         {isSelf ? (
-                          <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
+                          <span className="ml-2 text-xs text-muted">
                             you
                           </span>
                         ) : null}
                       </p>
-                      <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                      <p className="truncate text-xs text-muted">
                         {member.user.email}
                         <span className="mx-2">joined</span>
                         <Timestamp at={member.createdAt} />
@@ -104,18 +109,18 @@ export default async function SettingsPage({
         </Panel>
 
         {mayAudit ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="text-sm text-foreground/75">
             Changes made here are recorded in the{" "}
-            <a
+            <Link
               href={`/w/${slug}/audit`}
-              className="underline underline-offset-2 hover:text-zinc-900 dark:hover:text-zinc-100"
+              className="underline underline-offset-2 hover:text-foreground"
             >
               audit log
-            </a>
+            </Link>
             .
           </p>
         ) : null}
       </div>
-    </main>
+    </PageMain>
   );
 }

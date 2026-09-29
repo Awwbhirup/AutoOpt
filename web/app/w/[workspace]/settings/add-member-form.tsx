@@ -10,11 +10,11 @@
 
 import { useActionState, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Field, Input, Select } from "@/components/ui/input";
+import { Callout } from "@/components/ui/surface";
 import { addWorkspaceMember } from "@/lib/actions/members";
 import { IDLE } from "@/lib/actions/form";
-
-const FIELD =
-  "w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100";
 
 export function AddMemberForm({
   slug,
@@ -38,64 +38,45 @@ export function AddMemberForm({
     <form
       key={lastAdded ?? "new"}
       action={submit}
-      className="flex flex-wrap items-end gap-2 px-3 py-3"
+      className="flex flex-wrap items-end gap-3 px-4 py-4"
     >
       <input type="hidden" name="workspace" value={slug} />
 
-      <div className="min-w-[16rem] flex-1">
-        <label
-          htmlFor="member-email"
-          className="block text-xs text-zinc-500 dark:text-zinc-400"
-        >
-          Email
-        </label>
-        <input
+      <Field label="Email" htmlFor="member-email" className="min-w-[16rem] flex-1">
+        <Input
           id="member-email"
           name="email"
           type="email"
           required
           autoComplete="off"
           placeholder="someone@example.com"
-          className={FIELD}
         />
-      </div>
+      </Field>
 
-      <div className="min-w-[8rem]">
-        <label
-          htmlFor="member-role"
-          className="block text-xs text-zinc-500 dark:text-zinc-400"
-        >
-          Role
-        </label>
-        <select id="member-role" name="role" defaultValue="MEMBER" className={FIELD}>
+      <Field label="Role" htmlFor="member-role" className="min-w-[9rem]">
+        <Select id="member-role" name="role" defaultValue="MEMBER">
           {mayGrantOwner ? <option value="OWNER">Owner</option> : null}
           <option value="ADMIN">Admin</option>
           <option value="MEMBER">Member</option>
           <option value="VIEWER">Viewer</option>
-        </select>
-      </div>
+        </Select>
+      </Field>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-      >
-        {pending ? "Adding" : "Add"}
-      </button>
+      <Button type="submit" variant="primary" pending={pending}>
+        Add
+      </Button>
 
-      <p className="w-full text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="w-full text-xs text-muted">
         They need an account already. There are no pending invitations yet.
       </p>
 
       {state.error === null ? null : (
-        <p role="alert" className="w-full text-sm text-rose-700 dark:text-rose-400">
+        <Callout tone="refused" className="w-full">
           {state.error}
-        </p>
+        </Callout>
       )}
       {state.createdId === null ? null : (
-        <p className="w-full text-sm text-zinc-600 dark:text-zinc-400">
-          Added. They are in the list below.
-        </p>
+        <p className="w-full text-sm text-accent">Added. They are in the list below.</p>
       )}
     </form>
   );
