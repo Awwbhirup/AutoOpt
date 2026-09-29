@@ -9,6 +9,7 @@
 import Link from "next/link";
 
 import { BrandMark } from "@/components/app/brand-mark";
+import { CommandPalette } from "@/components/app/command-palette";
 import type { Role } from "@/lib/authorize";
 
 import { WorkspaceNav, type NavLink } from "./nav";
@@ -65,7 +66,8 @@ export function WorkspaceHeader({
           <WorkspaceNav links={links} />
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          <CommandPalette slug={workspace.slug} workspaces={workspaces} />
           <Link
             href="/docs"
             className="ui-focus hidden rounded-md px-2 py-1 text-sm text-foreground/75 transition-colors hover:text-foreground sm:inline"

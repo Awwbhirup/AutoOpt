@@ -35,15 +35,23 @@ export function NewSuiteDialog({
   programs,
   methods,
   label = "New suite",
+  defaultOpen = false,
 }: {
   slug: string;
   programs: PickableProgram[];
   methods: string[];
   label?: string;
+  /** Open on arrival, for links like the palette's "New benchmark suite". */
+  defaultOpen?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+  const change = (next: boolean) => {
+    setOpen(next);
+    // Opened from a ?new= link: closing it should not reopen it on refresh.
+    if (!next && defaultOpen) history.replaceState(null, "", window.location.pathname);
+  };
   const [picked, setPicked] = useState<Set<string>>(() => new Set(programs.slice(0, 8).map((p) => p.id)));
   const [chosen, setChosen] = useState<Set<string>>(
     () => new Set(DEFAULT_SUITE_METHODS.filter((method) => methods.includes(method))),
@@ -84,7 +92,7 @@ export function NewSuiteDialog({
   const tooMany = runs > MAX_SUITE_RUNS;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={change}>
       <DialogTrigger asChild>
         <Button variant="primary">{label}</Button>
       </DialogTrigger>

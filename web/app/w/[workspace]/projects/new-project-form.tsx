@@ -26,12 +26,20 @@ export function NewProjectDialog({
   slug,
   label = "New project",
   variant = "primary",
+  defaultOpen = false,
 }: {
   slug: string;
   label?: string;
   variant?: "primary" | "secondary";
+  /** Open on arrival, for links like the palette's "New project". */
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+  const change = (next: boolean) => {
+    setOpen(next);
+    // Opened from a ?new= link: closing it should not reopen it on refresh.
+    if (!next && defaultOpen) history.replaceState(null, "", window.location.pathname);
+  };
   const toast = useToast();
 
   const [state, submit, pending] = useActionState(
@@ -47,7 +55,7 @@ export function NewProjectDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={change}>
       <DialogTrigger asChild>
         <Button variant={variant}>{label}</Button>
       </DialogTrigger>
