@@ -1,21 +1,37 @@
 "use client";
 
 /**
- * The interactive half of the page.
- *
- * Events are applied as they arrive rather than collected and rendered at the
- * end. The fold is a pure function over everything received so far, so the
- * component holds a list of events and derives the view from it, which keeps
- * the streaming case and the finished case the same code path.
+ * The playground. The editor is analysed as you type (TAC, flow graph and
+ * dataflow facts from the engine, debounced and cancelled when superseded),
+ * and a run streams its decision trace, then shows the listing before and
+ * after as a diff. The program and method live in the URL hash, so the
+ * address bar is always a link to what is on screen.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
+import { EngineOffline } from "@/components/app/engine-offline";
+import { CfgGraph } from "@/components/app/playground/cfg-graph";
+import { DataflowTable } from "@/components/app/playground/dataflow-table";
+import { DiffView } from "@/components/app/playground/diff-view";
+import { MiniLangEditor, type EditorDiagnostic } from "@/components/app/playground/editor";
+import { TacView } from "@/components/app/playground/tac-view";
+import type { Analysis } from "@/components/app/playground/types";
 import { FinalVerdict } from "@/components/trace/final-verdict";
 import { TraceStepList } from "@/components/trace/step-list";
-import { buttonClass } from "@/components/ui/button";
-import { fieldClass } from "@/components/ui/input";
-import { streamedEvent, type StreamedEvent } from "@/lib/events";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Callout, Panel } from "@/components/ui/surface";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/components/ui/toast";
+import type { AnalyzeResponse } from "@/app/api/analyze/route";
+import { cx } from "@/lib/cx";
+import { readEventStream } from "@/lib/event-stream";
+import type { StreamedEvent } from "@/lib/events";
+import { methodLabel, RULE_METHODS } from "@/lib/methods";
+import { decodeState, encodeState, MAX_SHARED_SOURCE } from "@/lib/playground/url-state";
 import { foldTrace } from "@/lib/trace";
 
 interface Sample {
@@ -24,33 +40,115 @@ interface Sample {
   source: string;
 }
 
-const METHODS = [
-  { value: "greedy", label: "Greedy" },
-  { value: "fixed_pipeline", label: "Fixed pipeline" },
-  { value: "astar", label: "A* search" },
-  { value: "hill_climbing", label: "Hill climbing" },
-  { value: "simulated_annealing", label: "Simulated annealing" },
-  { value: "random_baseline", label: "Random baseline" },
-];
+const ANALYZE_AFTER_MS = 250;
+const HASH_AFTER_MS = 600;
 
+type AnalysisState =
+  | { status: "idle" | "loading" }
+  | { status: "ok"; result: Analysis }
+  | { status: "invalid"; diagnostic: Diagnostic; last: Analysis | null }
+  | { status: "offline" };
+
+type Diagnostic = Extract<AnalyzeResponse, { status: "invalid" }>["diagnostic"] & EditorDiagnostic;
+
+type Tab = "graph" | "tac" | "dataflow" | "trace" | "diff";
+
+// The hash as the page arrived with it, read once: typing rewrites the hash
+// and must not count as arriving again.
+let arrivalHash: string | null = null;
+const noSubscription = () => () => {};
+const readArrivalHash = () => (arrivalHash ??= window.location.hash);
+const noHashOnServer = () => null;
+
+/**
+ * Keyed on the arrival hash so a shared link's program is the initial state,
+ * not an update: the server renders the first sample, the client remounts
+ * with the shared one if there is one.
+ */
 export function TryItClient({ samples }: { samples: Sample[] }) {
-  const [source, setSource] = useState(samples[0].source);
-  const [method, setMethod] = useState("greedy");
+  const hash = useSyncExternalStore(noSubscription, readArrivalHash, noHashOnServer);
+  const shared = hash === null ? null : decodeState(hash);
+  return (
+    <Playground
+      key={shared === null ? "sample" : "shared"}
+      samples={samples}
+      initialSource={shared?.source ?? samples[0].source}
+      initialMethod={shared?.method ?? "greedy"}
+    />
+  );
+}
+
+function Playground({
+  samples,
+  initialSource,
+  initialMethod,
+}: {
+  samples: Sample[];
+  initialSource: string;
+  initialMethod: string;
+}) {
+  const toast = useToast();
+  const [source, setSource] = useState(initialSource);
+  const [method, setMethod] = useState(initialMethod);
+  const [analysis, setAnalysis] = useState<AnalysisState>({ status: "idle" });
+  const [selected, setSelected] = useState<number | null>(null);
+  const [tab, setTab] = useState<Tab>("graph");
   const [events, setEvents] = useState<StreamedEvent[]>([]);
   const [running, setRunning] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const abort = useRef<AbortController | null>(null);
+  const runAbort = useRef<AbortController | null>(null);
 
   const trace = useMemo(() => foldTrace(events), [events]);
 
-  const run = useCallback(async () => {
-    abort.current?.abort();
-    const controller = new AbortController();
-    abort.current = controller;
+  // Keep the address bar pointing at what is on screen.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      history.replaceState(null, "", `#${encodeState({ source, method })}`);
+    }, HASH_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [source, method]);
 
+  // Live analysis, newest request wins.
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      if (!source.trim()) return;
+      setAnalysis((current) => (current.status === "idle" ? { status: "loading" } : current));
+      try {
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ source }),
+          signal: controller.signal,
+        });
+        const answer = (await response.json()) as AnalyzeResponse;
+        if (controller.signal.aborted) return;
+        setAnalysis((current) => {
+          if (answer.status === "ok") return { status: "ok", result: answer.result };
+          if (answer.status === "invalid") {
+            const last = current.status === "ok" ? current.result : current.status === "invalid" ? current.last : null;
+            return { status: "invalid", diagnostic: answer.diagnostic, last };
+          }
+          return { status: "offline" };
+        });
+      } catch {
+        if (!controller.signal.aborted) setAnalysis({ status: "offline" });
+      }
+    }, ANALYZE_AFTER_MS);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [source]);
+
+  const run = useCallback(async () => {
+    runAbort.current?.abort();
+    const controller = new AbortController();
+    runAbort.current = controller;
     setEvents([]);
     setProblem(null);
     setRunning(true);
+    setTab("trace");
 
     try {
       const response = await fetch("/api/optimize", {
@@ -59,36 +157,14 @@ export function TryItClient({ samples }: { samples: Sample[] }) {
         body: JSON.stringify({ source, method, proveFinal: true }),
         signal: controller.signal,
       });
-
       if (!response.ok || !response.body) {
         setProblem("The run could not be started.");
         return;
       }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let newline = buffer.indexOf("\n");
-        const arrived: StreamedEvent[] = [];
-        while (newline !== -1) {
-          const line = buffer.slice(0, newline).trim();
-          buffer = buffer.slice(newline + 1);
-          if (line) {
-            const parsed = streamedEvent.safeParse(JSON.parse(line));
-            if (parsed.success) arrived.push(parsed.data);
-          }
-          newline = buffer.indexOf("\n");
-        }
-        // One update per chunk rather than per event, so a burst of events is
-        // one render instead of thirty.
-        if (arrived.length) setEvents((current) => [...current, ...arrived]);
-      }
+      const ending = await readEventStream(response.body, (arrived) =>
+        setEvents((current) => [...current, ...arrived]),
+      );
+      if (ending === "run_converged") setTab("diff");
     } catch (error) {
       if (!controller.signal.aborted) {
         setProblem(error instanceof Error ? error.message : "Something went wrong.");
@@ -98,81 +174,175 @@ export function TryItClient({ samples }: { samples: Sample[] }) {
     }
   }, [source, method]);
 
+  const copyLink = useCallback(async () => {
+    const url = `${window.location.origin}${window.location.pathname}#${encodeState({ source, method })}`;
+    history.replaceState(null, "", url);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({ title: "Link copied", description: "It opens this program with this method.", tone: "kept" });
+    } catch {
+      toast({ title: "Could not copy", description: "The address bar has the link.", tone: "refused" });
+    }
+  }, [source, method, toast]);
+
+  const shown = analysis.status === "ok" ? analysis.result : analysis.status === "invalid" ? analysis.last : null;
+  const diagnostic = analysis.status === "invalid" ? analysis.diagnostic : null;
+  const finished = trace.summary.status === "converged" && trace.finalTac !== null;
+
+  const status =
+    analysis.status === "ok" ? (
+      <Badge tone="kept" mark="+">
+        {analysis.result.blocks.length} blocks, {analysis.result.tac.length} TAC lines
+      </Badge>
+    ) : analysis.status === "invalid" ? (
+      <Badge tone="refused" mark="x">
+        {analysis.diagnostic.kind} error, line {analysis.diagnostic.line}
+      </Badge>
+    ) : analysis.status === "offline" ? (
+      <Badge tone="caution" mark="-">
+        engine offline
+      </Badge>
+    ) : (
+      <Badge tone="neutral" mark=".">
+        analysing
+      </Badge>
+    );
+
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-      <div className="flex flex-col gap-4">
-        <div>
-          <div className="mb-2 flex flex-wrap gap-1.5">
+    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-24">
+        <Panel title="Program" aside={status} bodyClassName="flex flex-col">
+          <div className="flex flex-wrap gap-1.5 border-b border-line px-3 py-2">
             {samples.map((sample) => (
               <button
                 key={sample.name}
                 type="button"
+                title={sample.note}
                 onClick={() => {
                   setSource(sample.source);
                   setEvents([]);
+                  setSelected(null);
                 }}
-                className={buttonClass({ size: "sm", variant: "secondary" })}
-                title={sample.note}
+                className={cx(
+                  "ui-focus rounded-md border px-2 py-1 text-xs transition-colors",
+                  source === sample.source
+                    ? "border-ramp-2 bg-ramp-2/10 text-foreground"
+                    : "border-line text-foreground/75 hover:border-foreground/25 hover:text-foreground",
+                )}
               >
                 {sample.name}
               </button>
             ))}
           </div>
+          <div className="h-[24rem] lg:h-[28rem]">
+            <MiniLangEditor
+              value={source}
+              onChange={(next) => setSource(next.slice(0, MAX_SHARED_SOURCE))}
+              diagnostic={diagnostic}
+              label="Program source"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-3">
+            <label htmlFor="method" className="sr-only">
+              Search method
+            </label>
+            <Select id="method" value={method} onChange={(event) => setMethod(event.target.value)} className="min-w-40 flex-1">
+              {RULE_METHODS.map((name) => (
+                <option key={name} value={name}>
+                  {methodLabel(name)}
+                </option>
+              ))}
+            </Select>
+            <Button variant="primary" onClick={run} pending={running} disabled={!source.trim() || diagnostic !== null}>
+              Optimize
+            </Button>
+            <Button variant="ghost" onClick={copyLink}>
+              Copy link
+            </Button>
+          </div>
+        </Panel>
 
-          <label htmlFor="source" className="sr-only">
-            Program source
-          </label>
-          <textarea
-            id="source"
-            value={source}
-            onChange={(event) => setSource(event.target.value)}
-            spellCheck={false}
-            rows={16}
-            className={fieldClass("p-3 font-terminal text-[13px] leading-relaxed")}
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label htmlFor="method" className="sr-only">
-            Search method
-          </label>
-          <select
-            id="method"
-            value={method}
-            onChange={(event) => setMethod(event.target.value)}
-            className={fieldClass("h-9 flex-1 px-2")}
-          >
-            {METHODS.map((entry) => (
-              <option key={entry.value} value={entry.value}>
-                {entry.label}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={run}
-            disabled={running || !source.trim()}
-            className={buttonClass({ variant: "primary" })}
-          >
-            {running ? "Running" : "Optimize"}
-          </button>
-        </div>
-
-        {problem ? (
-          <p className="ui-tone-refused rounded-lg border px-3 py-2 text-sm">
-            {problem}
-          </p>
+        {diagnostic ? (
+          <Callout tone="refused" title={`Line ${diagnostic.line}, column ${diagnostic.column}`}>
+            {diagnostic.message}
+          </Callout>
         ) : null}
+        {analysis.status === "offline" ? <EngineOffline /> : null}
+        {problem ? <Callout tone="refused">{problem}</Callout> : null}
       </div>
 
-      <div className="flex min-w-0 flex-col gap-6">
+      <div className="flex min-w-0 flex-col gap-4">
         {events.length > 0 ? <FinalVerdict summary={trace.summary} /> : null}
-        <TraceStepList
-          steps={trace.steps}
-          status={trace.summary.status}
-          initialTac={events.length > 0 ? trace.initialTac : null}
-        />
+
+        <Panel bodyClassName="px-4 pb-4">
+          <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)}>
+            <TabsList className="-mx-4 px-4 pt-1">
+              <TabsTrigger value="graph">Flow graph</TabsTrigger>
+              <TabsTrigger value="tac">TAC</TabsTrigger>
+              <TabsTrigger value="dataflow">Dataflow</TabsTrigger>
+              <TabsTrigger value="trace">
+                Trace
+                {trace.steps.length > 0 ? (
+                  <span className="ml-1.5 font-terminal text-xs text-muted">{trace.steps.length}</span>
+                ) : null}
+              </TabsTrigger>
+              <TabsTrigger value="diff" disabled={!finished} className="disabled:opacity-40">
+                Before / after
+              </TabsTrigger>
+            </TabsList>
+
+            {(["graph", "tac", "dataflow"] as const).map((name) => (
+              <TabsContent key={name} value={name} className={cx(analysis.status === "invalid" && "opacity-50")}>
+                {shown === null ? (
+                  analysis.status === "offline" ? (
+                    <p className="py-8 text-center text-sm text-muted">
+                      The analysis needs the engine, which is not answering.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col items-center gap-3 py-6">
+                      <Skeleton className="h-16 w-60" />
+                      <Skeleton className="h-6 w-px" />
+                      <Skeleton className="h-24 w-60" />
+                    </div>
+                  )
+                ) : name === "graph" ? (
+                  <>
+                    <CfgGraph analysis={shown} selected={selected} onSelect={setSelected} />
+                    <p className="mt-3 text-xs leading-relaxed text-muted">
+                      Blocks in program order. Green and red exits are a branch taken and not taken;
+                      dashed lines on the left go back to a loop head. Select a block to find it in the
+                      other tabs.
+                    </p>
+                  </>
+                ) : name === "tac" ? (
+                  <TacView analysis={shown} selected={selected} onSelect={setSelected} />
+                ) : (
+                  <DataflowTable analysis={shown} selected={selected} onSelect={setSelected} />
+                )}
+              </TabsContent>
+            ))}
+
+            <TabsContent value="trace">
+              {events.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted">
+                  Pick a method and press Optimize. Every step shows up here as the engine takes it.
+                </p>
+              ) : (
+                <TraceStepList
+                  steps={trace.steps}
+                  status={trace.summary.status}
+                  initialTac={trace.initialTac}
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="diff">
+              {finished && trace.finalTac !== null ? (
+                <DiffView before={trace.initialTac} after={trace.finalTac} />
+              ) : null}
+            </TabsContent>
+          </Tabs>
+        </Panel>
       </div>
     </div>
   );

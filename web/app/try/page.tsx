@@ -54,11 +54,11 @@ export default function TryPage() {
         <h1 className="font-hero text-3xl font-bold tracking-tight sm:text-4xl">
           Optimize a program
         </h1>
-        <p className="mt-2 max-w-2xl text-sm text-foreground/75">
-          Every step is shown as it happens: the opportunity found, what was
-          proposed, whether it survived verification, what it cost, and whether
-          it was kept. Nothing is accepted unless it both verifies and gets
-          cheaper.
+        <p className="mt-3 max-w-2xl text-[0.95rem] leading-relaxed text-foreground/75">
+          The three-address code, flow graph and dataflow facts update as you type. Optimize to
+          watch every step as it happens: what was proposed, whether it survived verification,
+          what it cost, and whether it was kept. Nothing is accepted unless it both verifies and
+          gets cheaper.
         </p>
       </header>
 
