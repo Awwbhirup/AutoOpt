@@ -3,12 +3,13 @@
  * in the editor. Public like /api/optimize, since the playground is.
  *
  * Always answers 200 with one of three shapes, so the editor can tell a
- * program with a mistake in it from an engine that is not there.
+ * program with a mistake in it from an engine that is busy or not there.
  */
 
 import { z } from "zod";
 
 import { analyzeSource, SourceError } from "@/lib/service";
+import { classifyServiceError, type ServiceProblem } from "@/lib/service-errors";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,7 @@ const body = z.object({ source: z.string().max(8_000) });
 export type AnalyzeResponse =
   | { status: "ok"; result: Awaited<ReturnType<typeof analyzeSource>> }
   | { status: "invalid"; diagnostic: SourceError["diagnostic"] }
-  | { status: "offline" };
+  | { status: "unavailable"; problem: ServiceProblem; message: string };
 
 export async function POST(request: Request) {
   const parsed = body.safeParse(await request.json().catch(() => null));
@@ -27,7 +28,10 @@ export async function POST(request: Request) {
   try {
     answer = { status: "ok", result: await analyzeSource(parsed.data.source, request.signal) };
   } catch (error) {
-    answer = error instanceof SourceError ? { status: "invalid", diagnostic: error.diagnostic } : { status: "offline" };
+    answer =
+      error instanceof SourceError
+        ? { status: "invalid", diagnostic: error.diagnostic }
+        : { status: "unavailable", ...classifyServiceError(error) };
   }
   return Response.json(answer, { headers: { "cache-control": "no-store" } });
 }

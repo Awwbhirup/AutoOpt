@@ -12,7 +12,8 @@
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { optimize, ServiceError } from "@/lib/service";
+import { optimize } from "@/lib/service";
+import { classifyServiceError } from "@/lib/service-errors";
 
 // The engine is synchronous Python behind an HTTP call, so this cannot run on
 // the edge runtime.
@@ -40,8 +41,7 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         // The response has already begun, so this is the only way left to say
         // what went wrong.
-        const message =
-          error instanceof ServiceError ? error.message : "the run could not be completed";
+        const { message } = classifyServiceError(error);
         controller.enqueue(
           encoder.encode(
             JSON.stringify({

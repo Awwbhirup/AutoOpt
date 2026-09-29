@@ -28,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import type { AnalyzeResponse } from "@/app/api/analyze/route";
 import { cx } from "@/lib/cx";
+import type { ServiceProblem } from "@/lib/service-errors";
 import { readEventStream } from "@/lib/event-stream";
 import type { StreamedEvent } from "@/lib/events";
 import { methodLabel, RULE_METHODS } from "@/lib/methods";
@@ -41,13 +42,22 @@ interface Sample {
 }
 
 const ANALYZE_AFTER_MS = 250;
+
+const PROBLEM_LABEL: Record<ServiceProblem, string> = {
+  busy: "engine busy",
+  too_large: "too large",
+  timeout: "timed out",
+  offline: "engine offline",
+  refused: "not analysed",
+  failed: "not analysed",
+};
 const HASH_AFTER_MS = 600;
 
 type AnalysisState =
   | { status: "idle" | "loading" }
   | { status: "ok"; result: Analysis }
   | { status: "invalid"; diagnostic: Diagnostic; last: Analysis | null }
-  | { status: "offline" };
+  | { status: "unavailable"; problem: ServiceProblem; message: string };
 
 type Diagnostic = Extract<AnalyzeResponse, { status: "invalid" }>["diagnostic"] & EditorDiagnostic;
 
@@ -129,10 +139,12 @@ function Playground({
             const last = current.status === "ok" ? current.result : current.status === "invalid" ? current.last : null;
             return { status: "invalid", diagnostic: answer.diagnostic, last };
           }
-          return { status: "offline" };
+          return { status: "unavailable", problem: answer.problem, message: answer.message };
         });
       } catch {
-        if (!controller.signal.aborted) setAnalysis({ status: "offline" });
+        if (!controller.signal.aborted) {
+          setAnalysis({ status: "unavailable", problem: "offline", message: "The analysis could not be reached." });
+        }
       }
     }, ANALYZE_AFTER_MS);
     return () => {
@@ -198,9 +210,9 @@ function Playground({
       <Badge tone="refused" mark="x">
         {analysis.diagnostic.kind} error, line {analysis.diagnostic.line}
       </Badge>
-    ) : analysis.status === "offline" ? (
+    ) : analysis.status === "unavailable" ? (
       <Badge tone="caution" mark="-">
-        engine offline
+        {PROBLEM_LABEL[analysis.problem]}
       </Badge>
     ) : (
       <Badge tone="neutral" mark=".">
@@ -267,7 +279,13 @@ function Playground({
             {diagnostic.message}
           </Callout>
         ) : null}
-        {analysis.status === "offline" ? <EngineOffline /> : null}
+        {analysis.status === "unavailable" ? (
+          analysis.problem === "offline" ? (
+            <EngineOffline />
+          ) : (
+            <Callout tone="caution">{analysis.message}</Callout>
+          )
+        ) : null}
         {problem ? <Callout tone="refused">{problem}</Callout> : null}
       </div>
 
@@ -294,10 +312,8 @@ function Playground({
             {(["graph", "tac", "dataflow"] as const).map((name) => (
               <TabsContent key={name} value={name} className={cx(analysis.status === "invalid" && "opacity-50")}>
                 {shown === null ? (
-                  analysis.status === "offline" ? (
-                    <p className="py-8 text-center text-sm text-muted">
-                      The analysis needs the engine, which is not answering.
-                    </p>
+                  analysis.status === "unavailable" ? (
+                    <p className="py-8 text-center text-sm text-muted">{analysis.message}</p>
                   ) : (
                     <div className="flex flex-col items-center gap-3 py-6">
                       <Skeleton className="h-16 w-60" />

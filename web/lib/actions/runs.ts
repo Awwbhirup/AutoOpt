@@ -18,6 +18,7 @@ import { authorize } from "../authorize";
 import type { RunFailed, StreamedEvent } from "../events";
 import { appendRunEvents, finalizeRun } from "../repositories/runs";
 import { ServiceError } from "../service";
+import { classifyServiceError } from "../service-errors";
 import { principalFor } from "../session";
 import type { StepCost, StepOutcome, StepVerification, TraceStatus, TraceStep } from "../trace";
 import { foldTrace } from "../trace";
@@ -106,15 +107,14 @@ export async function startRun(
  * the one the browser rendered be the same trace.
  */
 export function runFailure(runId: string, error: unknown): RunFailed {
-  const service = error instanceof ServiceError;
   return {
     kind: "run_failed",
     run_id: runId,
     // The engine's numbering stopped wherever it stopped. This event is not
     // part of it, and the stored ordering key is assigned on write anyway.
     seq: 0,
-    message: service ? error.message : "the run could not be completed",
-    error_type: service ? "ServiceError" : "Error",
+    message: classifyServiceError(error).message,
+    error_type: error instanceof ServiceError ? "ServiceError" : "Error",
   };
 }
 
