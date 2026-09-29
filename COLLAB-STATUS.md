@@ -1,35 +1,30 @@
 ## Now
-C6 playground upgrade: starting (X1 analyze() is on main), branch claude/funny-keller-iduooh
+C7 command palette + shortcuts: starting, branch claude/funny-keller-iduooh
 
-## Done, ready to integrate (branch rebased onto 0686bcb; C1 and C2 dropped out)
-- C3 analytics: 0ab84b1 (lib/analytics.ts + lib/repositories/analytics.ts, tested) and 5094892
-  (/w/[ws]/analytics, "Analytics" in the nav and on the dashboard). Range 7/30/90 days/all.
-  Headline tiles: mean reduction with controls, search methods only, runs + success share,
-  output match rate. Runs per day, cost reduction per method (box + dots, mean and median,
-  controls marked), tabs: category x method means, transformation acceptance share + reject
-  reasons, verification outcomes + verifier verdicts, slowest programs. No schema change.
-- C4 share links:
-  b67c103 migration 20260929..._share_suite_runs. Additive: ShareLink.runId becomes nullable,
-    new suiteRunId (FK, cascade), viewCount (default 0), lastViewedAt, and a CHECK that exactly
-    one of runId/suiteRunId is set (every existing row has runId, so it holds on prod data).
-  82ff3bb lib: tokens (18 random bytes, base64url), expiry never/1d/7d/30d, create + revoke
-    actions (revoke stays ADMIN+ as the permission table says), audit actions "share.created"
-    and "share.revoked" added to AuditAction in lib/repositories/audit.ts (CODEX: X3 will add
-    api key actions to the same union; trivial merge), resolver for /s/[token].
-  99bddd3 UI: Share dialog on run pages and suite results (create, copy, list, revoke),
-    /w/[ws]/shares (all links, linked from People), public /s/[token] for a run or suite results
-    (noindex, same report components members see, no links back into the workspace), revoked /
-    expired / unknown pages, and a dynamic OG card per link via next/og.
-  Checked end to end: create, copy, open logged out, OG image 200 image/png, view counted,
-  revoke, revoked page, unknown token page. No console errors, no overflow at 390/1440.
-- 8c78ccb removes my :root ramp and light glass from theme.css (globals.css has them).
-- Web checks on the rebased branch: tsc, eslint, vitest 275 passed.
+## Done, ready to integrate (branch rebased onto c0f90ec; C3, C4 and the theme cleanup dropped out)
+- C6 playground (/try):
+  faa08ff deps: @codemirror/{state,view,language,commands,lint}, @lezer/highlight, lz-string.
+  de63029 lib/event-stream.ts: one NDJSON reader for the browser; run-program.tsx uses it too.
+  979bfef lib/playground/*: URL state (lz-string in the hash), LCS line diff (lib/diff.ts), a CFG
+    layout with lanes for forward jumps and loops, the MiniLang tokenizer, fact formatting. Tested.
+  facb3be UI: CodeMirror editor with MiniLang highlighting and the engine's parse errors inline
+    (lint marker + callout with line/column), live analysis through a new /api/analyze route
+    (debounced 250 ms, older requests aborted; answers ok / invalid / offline), tabs for the flow
+    graph (SVG, T/F exits coloured, loops dashed on the left, selectable blocks), TAC by block,
+    dataflow facts per block (live in/out, reaching defs, available expressions), the streamed
+    trace, and a before/after diff that opens when the run converges. Program + method live in
+    the URL hash (replaceState, debounced) and "Copy link" copies it; a link opens straight into
+    that program.
+  1b9ec9f lib/engine.ts reads `available` directly now that X2 guarantees it.
+  Checked in the browser: analysis, block select, parse error, A* run to diff, shared link opens
+  with its method, phone 390 without overflow, no console errors.
+- Web checks on the rebased branch: tsc, eslint, vitest 293 passed (incl. the live service
+  test against a service built from main).
 
 ## Need from LOCAL
-- (relayed already) CODEX: `available` on /methods.
+- Nothing blocking.
 
 ## Notes for LOCAL
-- Shared run/suite reports live in web/components/app/run-report.tsx and suite-report.tsx; the
-  workspace pages use them too, so the public page cannot drift from what members see.
-- metadataBase: the OG image URL resolves from Vercel's production URL automatically; if you set
-  a custom domain, a metadataBase in the root layout would make previews use it.
+- /api/analyze is public like /api/optimize (the playground is public). CODEX's anonymous rate
+  limit stretch item in web/proxy.ts should cover both routes.
+- CodeMirror adds roughly 150 kB to the /try client bundle only; nothing else imports it.
