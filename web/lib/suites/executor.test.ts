@@ -18,8 +18,11 @@ function claimed(runId: string): ClaimedRun {
 
 const converged = { kind: "run_converged" } as unknown as StreamedEvent;
 
-function harness(queue: string[], behaviour: Record<string, "ok" | "throw"> = {}) {
+function harness(queue: string[], behaviour: Record<string, "ok" | "throw" | "busy-once" | "busy"> = {}) {
   const pending = [...queue];
+  const requeued: string[] = [];
+  const slept: number[] = [];
+  const busySeen = new Set<string>();
   const recorded: Record<string, string[]> = {};
   const finished: string[] = [];
   const sweeps: Date[] = [];
@@ -35,6 +38,10 @@ function harness(queue: string[], behaviour: Record<string, "ok" | "throw"> = {}
       async sweepStale(_id, before) {
         sweeps.push(before);
         return 0;
+      },
+      async requeue(runId) {
+        requeued.push(runId);
+        pending.unshift(runId);
       },
       async refresh() {
         const status: RunStatus = pending.length === 0 ? "SUCCEEDED" : "RUNNING";
@@ -55,13 +62,31 @@ function harness(queue: string[], behaviour: Record<string, "ok" | "throw"> = {}
     },
     async *optimize(run) {
       clock += 1000;
-      if (behaviour[run.runId] === "throw") throw new Error("engine down");
+      const mode = behaviour[run.runId];
+      if (mode === "throw") throw new Error("engine down");
+      if (mode === "busy" || (mode === "busy-once" && !busySeen.has(run.runId))) {
+        busySeen.add(run.runId);
+        throw new Error("busy");
+      }
       yield converged;
     },
     failure: () => ({ kind: "run_failed" }) as unknown as StreamedEvent,
+    retryable: (error) => error instanceof Error && error.message === "busy",
+    sleep: async (ms) => {
+      slept.push(ms);
+    },
   };
 
-  return { deps, recorded, finished, sweeps, advanceClock: (ms: number) => (clock += ms), clock: () => clock };
+  return {
+    deps,
+    recorded,
+    finished,
+    sweeps,
+    requeued,
+    slept,
+    advanceClock: (ms: number) => (clock += ms),
+    clock: () => clock,
+  };
 }
 
 describe("advanceSuiteRun", () => {
@@ -90,6 +115,26 @@ describe("advanceSuiteRun", () => {
     expect(result.ran).toBe(2);
     expect(result.remaining).toBe(1);
     expect(result.outOfTime).toBe(true);
+  });
+
+  it("puts a run the busy engine refused back in the queue and tries again", async () => {
+    const h = harness(["a", "b"], { a: "busy-once" });
+    const result = await advanceSuiteRun(h.deps, "s", Number.POSITIVE_INFINITY);
+
+    expect(h.requeued).toEqual(["a"]);
+    expect(h.slept).toEqual([1000]);
+    expect(h.finished).toEqual(["a", "b"]);
+    expect(h.recorded.a).toEqual(["run_converged"]);
+    expect(result.ran).toBe(2);
+  });
+
+  it("gives up waiting on a busy engine after the last backoff and records the failure", async () => {
+    const h = harness(["a"], { a: "busy" });
+    await advanceSuiteRun(h.deps, "s", Number.POSITIVE_INFINITY);
+
+    expect(h.slept).toEqual([1000, 2000, 4000, 8000]);
+    expect(h.recorded.a).toEqual(["run_failed"]);
+    expect(h.finished).toEqual(["a"]);
   });
 
   it("sweeps runs older than the stale window before starting", async () => {
