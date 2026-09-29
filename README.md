@@ -1,104 +1,108 @@
 # AutoOpt
 
-An agent that optimizes programs and checks every change before keeping it.
+A compiler optimizer that proves its work. Paste a program, watch it get
+lowered to three-address code, and see every proposed rewrite either kept or
+refused, with the reason, as it happens.
 
-Feed it a program. It lowers to three address code, looks for optimization
-opportunities, proposes a transformation, checks the result still behaves the
-same, measures whether it is actually cheaper, and keeps the change only if
-both hold. Repeat until nothing improves, logging every decision on the way.
+**Live:** https://autoopt.vercel.app
 
-Compiler design project (Project 5), with the run data also used for the
-statistics coursework.
+Each candidate transformation has to pass two gates before it is kept: it must
+behave exactly like the original (differential testing plus a Z3 equivalence
+check), and it must actually lower a weighted cost. Most proposals fail one of
+the two, and the decision log says which.
 
-Status: engine front end done (parser, TAC, CFG, interpreter). Analyses,
-transformations and the agent loop are next.
+## What is in it
 
-## Why bother
+**The product** (`web/`, Next.js 16, React 19, TypeScript)
 
-Compilers run optimizations in a fixed order, but the order matters. Doing CSE
-before dead code elimination gives different output than the other way round,
-and picking a good order is a hard search problem. Separately, a transformation
-that looks safe but isn't will quietly break the program.
+- Workspaces with owner, admin, member and viewer roles, enforced on the
+  server, and an audit log of who changed what.
+- Projects and programs, with runs that stream the optimizer's decisions live
+  over server-sent events and keep the full trace afterwards.
+- Benchmark suites: pick programs, run them across several methods as a queue
+  the database holds, and compare the methods on cost reduction and
+  verification outcomes.
+- A playground at `/try` that needs no account, and a language reference at
+  `/docs`.
+- Sign in with GitHub or with email and password (Auth.js, Prisma, Postgres).
+- A landing page whose charts are the real experiment data, drawn in WebGL
+  with React Three Fiber.
 
-AutoOpt treats both as the actual problem: it searches over orderings instead
-of following a fixed pipeline, and no change gets kept without passing a
-verification step.
+**The compute service** (`service/`, FastAPI)
 
-## How it works
+Stateless. Takes a program, runs the optimizer and streams the decision log as
+NDJSON. It also returns the TAC, control-flow graph and per-block dataflow
+facts for a program without optimizing it. It stores nothing; everything
+persistent belongs to the web tier.
 
-```
-source -> parser -> TAC + CFG
-                      |
-                      v
-        +-------------------------------------+
-        |  Orchestrator                       |
-        |                                     |
-        |   analyse -> propose -> verify      |
-        |      ^                     |        |
-        |      |                     v        |
-        |   accept/reject <---- evaluate cost |
-        +-------------------------------------+
-                      |
-                      v
-          optimized TAC + decision log
-```
+**The engine** (`engine/`, Python 3.12)
 
-Five components, per the project spec:
-
-| Component | Job |
+| Part | What it does |
 |---|---|
-| Orchestrator | runs the analyse/propose/verify/evaluate loop until nothing improves |
-| Code Analysis Specialist | dataflow analyses produce facts, a forward chaining rule engine turns them into opportunities |
-| Optimization Specialist | proposes one transformation, either rule based or from an LLM |
-| Verification Module | differential testing plus Z3 equivalence checking |
-| Cost Evaluator | weighted cost over instruction count, arithmetic ops, temporaries, execution time |
+| Front end | lexer, recursive-descent parser, declaration checks |
+| IR | three-address code, CFG, dominators, loop depth, an interpreter |
+| Analysis | liveness, available expressions, reaching definitions, constants |
+| Rules | a forward-chaining rule engine that turns facts into opportunities |
+| Transforms | eight rewrites, from constant folding to dead code elimination |
+| Search | fixed pipeline, greedy, A*, hill climbing, simulated annealing, a random baseline, and language-model arms |
+| Verification | differential testing over generated inputs, then Z3 over SSA |
+| Cost | weighted instruction count, arithmetic ops, temporaries, execution time |
 
-A change is kept only if it verifies AND lowers cost.
-
-## What verification actually means
-
-Not a claim that arbitrary programs are proven equivalent. Two things happen:
-
-- both versions run over generated and edge case inputs and their output
-  traces are compared, which is evidence rather than proof
-- both get encoded into SSA and Z3 is asked whether they can differ, which is
-  a proof over the supported subset of the IR
-
-Loops are unrolled to a bound, so those come back as `unknown_bounded` rather
-than proven. The decision log keeps that distinction instead of flattening it
-into a pass.
-
-## Layout
+## Architecture
 
 ```
-engine/
-  autoopt/
-    lang/       lexer, parser, AST, declaration checking
-    ir/         three address code, CFG, dominators, loop depth
-    interp/     TAC interpreter
-    analysis/   liveness, available expressions, reaching defs, constants
-    rules/      forward chaining rule engine
-    transforms/ the optimization catalog
-    verify/     differential testing, Z3
-    cost/       cost model
-    search/     baseline, greedy, A*, hill climbing, annealing, bayes
-    orchestrator/
-    datagen/    corpus generator
-    stats/      ANOVA, regression, distribution fits, reliability
-    figures/    plots
-    report/     decision logs and summaries
-    events.py   decision log event contract
-data/           generated corpus and run logs, gitignored
+ browser
+    |
+    v
+ Next.js on Vercel ---- Postgres (Neon)
+    |   auth, RBAC, runs, suites, audit
+    | HTTP, NDJSON stream
+    v
+ FastAPI compute service (Docker)
+    |
+    v
+ engine: parse -> TAC + CFG -> analyse -> propose -> verify -> cost -> keep or refuse
 ```
 
-## Running it
+The engine never prints, touches the network or a database. It reports through
+a callback, and the batch runner, the report generator and the live trace in
+the browser all read that same event stream, so a number in a report and a
+number on screen come from one place.
+
+## What verification means here
+
+Not a claim that arbitrary programs are proven equivalent. Both versions run
+over generated and edge-case inputs and their outputs are compared, which is
+evidence. Then both are encoded in SSA and Z3 is asked whether they can
+differ, which is a proof over the supported subset of the IR. Loops are
+unrolled to a bound, so those come back as `unknown_bounded` rather than
+proven, and the decision log keeps that distinction.
+
+## The study
+
+Every search method was run against the same 500 generated programs, 4,500
+runs in total. The analysis (ANOVA, Tukey HSD, regression, distribution fits,
+reliability) lives in `engine/autoopt/stats` and is regenerated from the run
+data by `make analyze`; the charts on the landing page are generated from the
+same data by `scripts/record_*.py`.
+
+## Running it locally
+
+Needs Python 3.12, Node 22 and a Postgres database (a free Neon project works).
+
+With a virtualenv active:
 
 ```bash
-make install
-make test
+make install        # engine and service, editable, plus web dependencies
+make serve          # compute service on :8000
+make app            # web app on :3000
+make test           # engine, service and web tests
 ```
 
-Corpus and full experiment:
+Copy `web/.env.example` to `web/.env` and fill it in. The language-model arms
+are optional and read their keys from `engine/.env`.
+
+Reproducing the study:
 
 ```bash
 make corpus
@@ -106,21 +110,14 @@ make experiment
 make analyze
 ```
 
-`make reproduce` regenerates everything from scratch. Seeded throughout and
-LLM responses are cached, so repeated runs give the same output.
+Seeded throughout, and model responses are cached, so repeated runs give the
+same output.
 
-## Config
+## Layout
 
-Copy `engine/.env.example` to `engine/.env` and fill in keys. The LLM part is
-optional, set `AUTOOPT_LLM_PROVIDER=stub` to run with no network at all.
-
-## Notes
-
-The engine is a plain library with no printing, network or database calls. It
-reports what it did through a callback, and the batch runner, the report
-renderer and the web UI all read that same event stream, so the numbers in a
-report and the numbers in a live demo come from one place.
-
-## Licence
-
-MIT
+```
+engine/    the optimizer, as a library
+service/   FastAPI wrapper that streams the decision log
+web/       Next.js app: auth, workspaces, runs, suites, landing page
+scripts/   generators for the data files the site draws from
+```
