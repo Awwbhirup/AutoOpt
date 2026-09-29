@@ -13,6 +13,7 @@ import { RIDGES } from "@/lib/method-ridges";
 
 import { MethodRidgeline } from "./method-ridgeline";
 import { css, rampAt } from "./ramp";
+import { supportsWebGL } from "./webgl";
 
 const RidgelineScene = dynamic(() => import("./ridgeline-scene"), {
   ssr: false,
@@ -23,15 +24,6 @@ const TOTAL = RIDGES.reduce((sum, ridge) => sum + ridge.n, 0);
 
 function label(method: string): string {
   return method.replace(/_/g, " ");
-}
-
-function supportsWebGL(): boolean {
-  try {
-    const canvas = document.createElement("canvas");
-    return canvas.getContext("webgl2") !== null || canvas.getContext("webgl") !== null;
-  } catch {
-    return false;
-  }
 }
 
 export function MethodRidgeline3D({ className }: { className?: string }) {

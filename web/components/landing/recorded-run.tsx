@@ -31,7 +31,7 @@ import {
 } from "react";
 
 import { columnsOf } from "@/components/landing/cost-trajectory";
-import { RunTrajectory3D } from "@/components/landing/run-trajectory-3d";
+import { RunTrajectoryGL } from "@/components/landing/run-trajectory-gl";
 import { FinalVerdict } from "@/components/trace/final-verdict";
 import { TraceStepList } from "@/components/trace/step-list";
 import { RECORDED_EVENTS } from "@/lib/recorded-run";
@@ -175,7 +175,7 @@ export function RecordedRun() {
 
       <div className="overflow-hidden rounded-xl border border-line bg-surface/80 shadow-[0_24px_60px_-32px_rgba(0,0,0,0.9)] backdrop-blur-sm">
         <div className="border-b border-line px-4 pb-3 pt-4">
-          <RunTrajectory3D slabs={columns} total={ALL_COLUMNS} />
+          <RunTrajectoryGL slabs={columns} total={ALL_COLUMNS} />
         </div>
 
         {/* Masked top and bottom, so a step arrives out of a fade rather than
