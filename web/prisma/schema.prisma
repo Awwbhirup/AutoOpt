@@ -10,8 +10,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   // Migrations have to bypass the connection pooler. Run through the pooled
   // endpoint they fail partway with an advisory-lock error, which reads like a
   // broken migration rather than the wrong URL.
@@ -41,6 +41,8 @@ model User {
   apiKeys      ApiKey[]
   auditEntries AuditLog[]
   shareLinks   ShareLink[]
+  suites       BenchmarkSuite[]
+  suiteRuns    SuiteRun[]
 }
 
 model Account {
@@ -140,23 +142,24 @@ model Project {
 }
 
 model Program {
-  id          String   @id @default(cuid())
-  projectId   String
-  authorId    String?
-  name        String
-  source      String   @db.Text
-  category    String   @default("mixed")
+  id         String   @id @default(cuid())
+  projectId  String
+  authorId   String?
+  name       String
+  source     String   @db.Text
+  category   String   @default("mixed")
   /// Instruction counts and the like, as the engine reports them. Denormalized
   /// so a program list does not have to parse every program to render.
-  features    Json?
+  features   Json?
   /// Set when the source arrived as an upload rather than being typed.
-  uploadName  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  uploadName String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  author  User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author  User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
   runs    Run[]
+  suites  SuiteProgram[]
 
   @@index([projectId])
   @@index([authorId])
@@ -175,24 +178,24 @@ enum RunStatus {
 }
 
 model Run {
-  id         String    @id @default(cuid())
-  programId  String
+  id          String  @id @default(cuid())
+  programId   String
   startedById String?
-  suiteRunId String?
+  suiteRunId  String?
 
-  method     String
-  seed       Int       @default(0)
+  method String
+  seed   Int       @default(0)
   /// The rest of RunConfig as sent, so a run can be repeated exactly.
-  config     Json
-  status     RunStatus @default(QUEUED)
+  config Json
+  status RunStatus @default(QUEUED)
 
-  costBefore Float?
-  costAfter  Float?
+  costBefore  Float?
+  costAfter   Float?
   /// The PASS/FAIL verdict: did the optimized program still behave the same.
   outputMatch Boolean?
   /// Z3's answer when the run asked for one, including unknown_bounded.
-  finalProof String?
-  error      String?   @db.Text
+  finalProof  String?
+  error       String?  @db.Text
 
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
@@ -211,12 +214,12 @@ model Run {
 }
 
 model RunEvent {
-  id    String @id @default(cuid())
-  runId String
+  id        String   @id @default(cuid())
+  runId     String
   /// Monotonic within a run. The decision log's ordering key, so the trace can
   /// be replayed in the order it happened rather than the order it was written.
-  seq   Int
-  kind  String
+  seq       Int
+  kind      String
   /// The engine's event, stored whole. Keeping the payload rather than a column
   /// per field means the engine can add an event type without a migration, and
   /// the trace a report quotes stays byte-identical to the one persisted here.
@@ -230,20 +233,20 @@ model RunEvent {
 }
 
 model Transformation {
-  id     String @id @default(cuid())
-  runId  String
+  id                  String   @id @default(cuid())
+  runId               String
   /// Which optimization it was, from the engine's catalog.
-  kind   String
+  kind                String
   /// Line in the three-address listing the change was made at.
-  site   Int
-  costBefore Float
-  costAfter  Float
+  site                Int
+  costBefore          Float
+  costAfter           Float
   verificationMethod  String
   verificationVerdict String
-  accepted     Boolean
+  accepted            Boolean
   /// Why it was turned down, when it was.
-  rejectReason String?
-  createdAt    DateTime @default(now())
+  rejectReason        String?
+  createdAt           DateTime @default(now())
 
   run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
 
@@ -256,6 +259,7 @@ model Transformation {
 model BenchmarkSuite {
   id          String   @id @default(cuid())
   workspaceId String
+  createdById String?
   name        String
   description String?
   /// Which methods and categories to cross, and at what budgets. The batch
@@ -264,38 +268,61 @@ model BenchmarkSuite {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  programs  SuiteProgram[]
   suiteRuns SuiteRun[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
 }
 
-model SuiteRun {
-  id        String    @id @default(cuid())
+/// Which programs a suite runs. A table rather than ids in the grid, so a
+/// deleted program leaves the suite instead of leaving a dangling id in it.
+model SuiteProgram {
   suiteId   String
-  status    RunStatus @default(QUEUED)
-  total     Int       @default(0)
-  completed Int       @default(0)
-  startedAt  DateTime  @default(now())
-  finishedAt DateTime?
+  programId String
+  /// Order the programs were picked in, which is the order they are run.
+  position  Int    @default(0)
 
-  suite BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
-  runs  Run[]
+  suite   BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  program Program        @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@id([suiteId, programId])
+  @@index([programId])
+}
+
+model SuiteRun {
+  id          String    @id @default(cuid())
+  suiteId     String
+  startedById String?
+  /// The grid as it was when this run started. The suite can be edited later
+  /// and a finished result should still say what it measured.
+  grid        Json?
+  status      RunStatus @default(QUEUED)
+  total       Int       @default(0)
+  completed   Int       @default(0)
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  suite     BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  startedBy User?          @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  runs      Run[]
 
   @@index([suiteId])
+  @@index([startedById])
 }
 
 // --- sharing, keys, audit, quota --------------------------------------------
 
 model ShareLink {
-  id        String    @id @default(cuid())
-  runId     String
+  id          String    @id @default(cuid())
+  runId       String
   createdById String?
-  token     String    @unique
-  expiresAt DateTime?
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  token       String    @unique
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
 
   run       Run   @relation(fields: [runId], references: [id], onDelete: Cascade)
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
@@ -326,10 +353,10 @@ model ApiKey {
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  workspaceId String
-  actorId     String?
-  action      String
+  id           String   @id @default(cuid())
+  workspaceId  String
+  actorId      String?
+  action       String
   /// What was acted on, as a type and id rather than a foreign key, so an entry
   /// survives the thing it describes being deleted.
   resourceType String
