@@ -61,6 +61,10 @@ export function prismaSuiteStore(db: PrismaClient): SuiteStore {
       };
     },
 
+    async requeue(runId: string): Promise<void> {
+      await db.run.updateMany({ where: { id: runId, status: "RUNNING" }, data: { status: "QUEUED" } });
+    },
+
     async sweepStale(suiteRunId: string, before: Date): Promise<number> {
       const result = await db.run.updateMany({
         where: { suiteRunId, status: "RUNNING", startedAt: { lt: before } },

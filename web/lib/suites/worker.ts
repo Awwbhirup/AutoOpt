@@ -5,6 +5,7 @@
 import { RunRecorder, runFailure } from "../actions/runs";
 import { prisma } from "../db";
 import { optimize } from "../service";
+import { classifyServiceError } from "../service-errors";
 import { advanceSuiteRun, type AdvanceResult, type ExecutorDeps } from "./executor";
 import { prismaSuiteStore } from "./store";
 
@@ -23,6 +24,7 @@ export function suiteExecutor(): ExecutorDeps {
         signal,
       }),
     failure: runFailure,
+    retryable: (error) => classifyServiceError(error).problem === "busy",
   };
 }
 

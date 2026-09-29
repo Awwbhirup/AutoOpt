@@ -35,6 +35,8 @@ export interface SuiteStore {
   sweepStale(suiteRunId: string, before: Date): Promise<number>;
   /** Recount progress and close the suite run when nothing is left. */
   refresh(suiteRunId: string): Promise<{ remaining: number; status: RunStatus }>;
+  /** Put a claimed run back in the queue, untouched, to be tried again. */
+  requeue(runId: string): Promise<void>;
 }
 
 export interface Recorder {
@@ -47,8 +49,15 @@ export interface ExecutorDeps {
   recorder(runId: string): Recorder;
   optimize(run: ClaimedRun, signal: AbortSignal): AsyncIterable<StreamedEvent>;
   failure(runId: string, error: unknown): StreamedEvent;
+  /** True for a refusal worth waiting out (the engine was busy), not a failure. */
+  retryable?(error: unknown): boolean;
+  /** Waits between retries; injectable so tests do not sleep. */
+  sleep?(ms: number): Promise<void>;
   now?(): number;
 }
+
+/** Waits after a busy refusal, doubling, capped. */
+export const BUSY_BACKOFF_MS = [1000, 2000, 4000, 8000];
 
 /** A RUNNING run older than this has lost its worker. */
 export const STALE_AFTER_MS = 10 * 60 * 1000;
@@ -75,7 +84,9 @@ export async function advanceSuiteRun(
   const now = deps.now ?? Date.now;
   await deps.store.sweepStale(suiteRunId, new Date(now() - STALE_AFTER_MS));
 
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   let ran = 0;
+  let busyStreak = 0;
   for (;;) {
     if (now() >= deadline || signal.aborted) {
       const progress = await deps.store.refresh(suiteRunId);
@@ -86,15 +97,30 @@ export async function advanceSuiteRun(
     if (run === null) break;
 
     const recorder = deps.recorder(run.runId);
+    let recorded = 0;
+    let requeued = false;
     try {
       for await (const event of deps.optimize(run, signal)) {
         await recorder.record(event);
+        recorded += 1;
       }
     } catch (error) {
-      if (!signal.aborted) await recorder.record(deps.failure(run.runId, error));
-    } finally {
-      await recorder.finish();
+      // Refused before anything happened because the engine was full: not
+      // this run's failure. Back in the queue, and wait before claiming again.
+      if (recorded === 0 && deps.retryable?.(error) && busyStreak < BUSY_BACKOFF_MS.length) {
+        requeued = true;
+      } else if (!signal.aborted) {
+        await recorder.record(deps.failure(run.runId, error));
+      }
     }
+    if (requeued) {
+      await deps.store.requeue(run.runId);
+      await sleep(BUSY_BACKOFF_MS[busyStreak]);
+      busyStreak += 1;
+      continue;
+    }
+    busyStreak = 0;
+    await recorder.finish();
     ran += 1;
     await deps.store.refresh(suiteRunId);
   }
