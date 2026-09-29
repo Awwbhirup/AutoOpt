@@ -10,17 +10,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PageMain } from "@/components/app/frame";
-import { ReductionDistribution } from "@/components/app/suite/distribution";
-import { ProgramMatrix } from "@/components/app/suite/matrix";
+import { ShareDialog } from "@/components/app/share/share-dialog";
 import { SuiteProgress } from "@/components/app/suite/progress";
-import { VerificationOutcomes } from "@/components/app/suite/verification";
+import { SuiteReport } from "@/components/app/suite-report";
 import { Timestamp } from "@/components/shell/timestamp";
 import { buttonClass } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader, Panel, Stat } from "@/components/ui/surface";
+import { PageHeader } from "@/components/ui/surface";
 import { authorize } from "@/lib/authorize";
 import { prisma } from "@/lib/db";
+import { listSharesForTarget } from "@/lib/repositories/shares";
 import { findSuiteRun, listSuiteRunRows } from "@/lib/repositories/suites";
+import { toShareRows } from "@/lib/share-rows";
 import { readGrid } from "@/lib/suites/grid";
 import { summarizeSuite } from "@/lib/suites/results";
 import { requireWorkspace } from "@/lib/workspace";
@@ -29,8 +29,6 @@ export const metadata: Metadata = {
   title: "Suite results",
   description: "Cost reduction and verification outcomes per method, across a suite of programs.",
 };
-
-const pct = (value: number | null) => (value === null ? "n/a" : `${value.toFixed(1)}%`);
 
 export default async function SuiteRunPage({
   params,
@@ -46,13 +44,13 @@ export default async function SuiteRunPage({
     notFound();
   }
 
-  const rows = await listSuiteRunRows(prisma, runId);
+  const [rows, shares] = await Promise.all([
+    listSuiteRunRows(prisma, runId),
+    listSharesForTarget(prisma, { suiteRunId: runId }),
+  ]);
   const grid = readGrid(suiteRun.grid);
   const results = summarizeSuite(rows, grid.methods);
 
-  const counted = results.methods.reduce((sum, method) => sum + method.pass + method.fail, 0);
-  const matched = results.methods.reduce((sum, method) => sum + method.pass, 0);
-  const best = [...results.methods].reverse().find((method) => method.spread.median !== null && !method.baseline);
   const running = rows.filter((row) => row.status === "RUNNING").length;
 
   return (
@@ -72,9 +70,19 @@ export default async function SuiteRunPage({
         }
         title={suiteRun.suite.name}
         actions={
-          <a href={`/api/suite-runs/${runId}/csv`} className={buttonClass({ variant: "secondary" })} download>
-            Export CSV
-          </a>
+          <>
+            <ShareDialog
+              slug={slug}
+              target={{ suiteRunId: runId }}
+              links={toShareRows(shares)}
+              mayCreate={authorize(principal, "share:create")}
+              mayRevoke={authorize(principal, "share:revoke")}
+              what="these results"
+            />
+            <a href={`/api/suite-runs/${runId}/csv`} className={buttonClass({ variant: "secondary" })} download>
+              Export CSV
+            </a>
+          </>
         }
       >
         <p className="mt-2 text-sm text-foreground/75">
@@ -99,56 +107,7 @@ export default async function SuiteRunPage({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat
-          label="Mean reduction"
-          value={pct(results.overallMean)}
-          note="every finished run, controls included"
-          accent="var(--ramp-2)"
-        />
-        <Stat
-          label="Search methods"
-          value={pct(results.searchMean)}
-          note="controls left out"
-          accent="var(--ramp-3)"
-        />
-        <Stat
-          label="Best method"
-          value={best ? best.label : "n/a"}
-          note={best ? `median ${pct(best.spread.median)}` : "no finished runs yet"}
-          accent="var(--ramp-4)"
-        />
-        <Stat
-          label="Output matched"
-          value={counted === 0 ? "n/a" : `${matched}/${counted}`}
-          note="runs whose output was checked"
-          accent="var(--accent)"
-        />
-      </div>
-
-      {rows.length === 0 ? (
-        <Panel className="mt-6">
-          <EmptyState title="This suite run has no runs">
-            Its programs may have been deleted after it was started.
-          </EmptyState>
-        </Panel>
-      ) : (
-        <div className="mt-6 grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <Panel title="Cost reduction by method" bodyClassName="px-4 py-4">
-            <ReductionDistribution methods={results.methods} />
-          </Panel>
-          <Panel title="Verification outcomes" bodyClassName="px-4 py-4">
-            <VerificationOutcomes methods={results.methods} />
-          </Panel>
-          <Panel
-            title="By program"
-            aside={`${results.programs.length} programs`}
-            className="xl:col-span-2"
-          >
-            <ProgramMatrix programs={results.programs} methods={results.methods} slug={slug} />
-          </Panel>
-        </div>
-      )}
+      <SuiteReport results={results} slug={slug} />
     </PageMain>
   );
 }

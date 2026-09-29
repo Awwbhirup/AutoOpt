@@ -25,6 +25,8 @@ const WORDING: Record<string, string> = {
   "member.added": "added",
   "member.role_changed": "changed the role of",
   "member.removed": "removed",
+  "share.created": "shared",
+  "share.revoked": "revoked the link",
 };
 
 /**
@@ -38,6 +40,9 @@ function detail(entry: AuditLogEntry): string {
   const meta = entry.metadata;
   if (meta === null || typeof meta !== "object" || Array.isArray(meta)) return "";
   const at = meta as Record<string, unknown>;
+  if (entry.action.startsWith("share.")) {
+    return typeof at.label === "string" ? at.label : entry.resourceId;
+  }
   const who = typeof at.email === "string" ? at.email : entry.resourceId;
 
   if (entry.action === "member.role_changed") {

@@ -13,43 +13,20 @@ import { notFound } from "next/navigation";
 import { PageMain } from "@/components/app/frame";
 import { RunStatusBadge } from "@/components/shell/run-table";
 import { formatWhen } from "@/components/shell/timestamp";
-import { FinalVerdict } from "@/components/trace/final-verdict";
-import { TraceStepList } from "@/components/trace/step-list";
-import { TacListing } from "@/components/trace/tac-listing";
-import { Callout, PageHeader } from "@/components/ui/surface";
+import { RunReport } from "@/components/app/run-report";
+import { ShareDialog } from "@/components/app/share/share-dialog";
+import { PageHeader } from "@/components/ui/surface";
 import { authorize } from "@/lib/authorize";
 import { prisma } from "@/lib/db";
-import { streamedEvent, type StreamedEvent } from "@/lib/events";
 import { findRunWithEvents } from "@/lib/repositories/runs";
-import { foldTrace } from "@/lib/trace";
+import { listSharesForTarget } from "@/lib/repositories/shares";
+import { toShareRows } from "@/lib/share-rows";
 import { requireWorkspace } from "@/lib/workspace";
 
 export const metadata: Metadata = {
   title: "Run",
   description: "Every decision one optimization run made, as it was recorded.",
 };
-
-/**
- * Stored payloads were parsed once on the way in, so one that no longer parses
- * means the engine vocabulary has moved under it. Counted and reported rather
- * than thrown, because a handful of unreadable rows should not take the rest of
- * the trace down with them.
- */
-function replay(rows: readonly { payload: unknown }[]): {
-  events: StreamedEvent[];
-  unreadable: number;
-} {
-  const events: StreamedEvent[] = [];
-  let unreadable = 0;
-
-  for (const row of rows) {
-    const parsed = streamedEvent.safeParse(row.payload);
-    if (parsed.success) events.push(parsed.data);
-    else unreadable += 1;
-  }
-
-  return { events, unreadable };
-}
 
 function elapsed(startedAt: Date, finishedAt: Date | null): string {
   if (finishedAt === null) return "n/a";
@@ -79,8 +56,7 @@ export default async function RunDetailPage({
   // any workspace could read any run by pointing their own slug at its id.
   if (run === null || run.program.project.workspaceId !== workspace.id) notFound();
 
-  const { events, unreadable } = replay(run.events);
-  const trace = foldTrace(events);
+  const shares = await listSharesForTarget(prisma, { runId: run.id });
 
   return (
     <PageMain>
@@ -94,7 +70,19 @@ export default async function RunDetailPage({
           </>
         }
         title={run.program.name}
-        actions={<RunStatusBadge status={run.status} />}
+        actions={
+          <>
+            <RunStatusBadge status={run.status} />
+            <ShareDialog
+              slug={slug}
+              target={{ runId: run.id }}
+              links={toShareRows(shares)}
+              mayCreate={authorize(principal, "share:create")}
+              mayRevoke={authorize(principal, "share:revoke")}
+              what="this run"
+            />
+          </>
+        }
       >
         <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
           <Fact label="method" value={run.method} />
@@ -105,47 +93,7 @@ export default async function RunDetailPage({
         </dl>
       </PageHeader>
 
-      <div className="space-y-4">
-        {run.status === "ABANDONED" ? (
-          <Callout tone="caution" title="This run was abandoned">
-            The stream ended before the engine converged, usually because the browser watching it
-            went away. The trace below is everything that was written down first, and it still
-            reads as running because that is where it stops.
-          </Callout>
-        ) : null}
-
-        {run.status === "FAILED" && run.error !== null ? (
-          <Callout tone="refused" title="The run failed">
-            {run.error}
-          </Callout>
-        ) : null}
-
-        {unreadable > 0 ? (
-          <Callout>
-            {unreadable} stored {unreadable === 1 ? "event" : "events"} could not be read back and{" "}
-            {unreadable === 1 ? "is" : "are"} left out of the trace.
-          </Callout>
-        ) : null}
-
-        <FinalVerdict summary={trace.summary} />
-
-        <TraceStepList
-          steps={trace.steps}
-          status={trace.summary.status}
-          initialTac={trace.initialTac}
-        />
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="min-w-0">
-            <TacListing lines={trace.initialTac} label="before" />
-          </div>
-          {trace.finalTac === null ? null : (
-            <div className="min-w-0">
-              <TacListing lines={trace.finalTac} previous={trace.initialTac} label="after" />
-            </div>
-          )}
-        </div>
-      </div>
+      <RunReport run={run} />
     </PageMain>
   );
 }

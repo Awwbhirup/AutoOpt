@@ -108,18 +108,21 @@ export default async function SettingsPage({
           )}
         </Panel>
 
-        {mayAudit ? (
-          <p className="text-sm text-foreground/75">
-            Changes made here are recorded in the{" "}
-            <Link
-              href={`/w/${slug}/audit`}
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              audit log
-            </Link>
-            .
-          </p>
-        ) : null}
+        <p className="text-sm text-foreground/75">
+          Links shared out of this workspace are listed under{" "}
+          <Link href={`/w/${slug}/shares`} className="underline underline-offset-4 hover:text-foreground">
+            shared links
+          </Link>
+          {mayAudit ? (
+            <>
+              , and changes made here are recorded in the{" "}
+              <Link href={`/w/${slug}/audit`} className="underline underline-offset-4 hover:text-foreground">
+                audit log
+              </Link>
+            </>
+          ) : null}
+          .
+        </p>
       </div>
     </PageMain>
   );

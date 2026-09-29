@@ -20,7 +20,8 @@ export function ProgramMatrix({
 }: {
   programs: ProgramResult[];
   methods: MethodResult[];
-  slug: string;
+  /** Set for members: cells link to the run's trace. Left out on public pages. */
+  slug?: string;
 }) {
   const columns = [...methods].reverse();
 
@@ -64,14 +65,8 @@ export function ProgramMatrix({
                   cell.reduction === null || cell.reduction <= 0
                     ? undefined
                     : `color-mix(in srgb, ${rampAt(Math.min(cell.reduction, FULL_AT) / FULL_AT)} 20%, transparent)`;
-                return (
-                  <td key={method.method} className="p-1 text-right">
-                    <Link
-                      href={`/w/${slug}/runs/${cell.runId}`}
-                      title={`${program.name}, ${method.label}: open the trace`}
-                      className="ui-focus ml-auto flex w-24 items-center justify-end gap-1.5 rounded-md px-2 py-1.5 font-terminal text-xs tabular-nums transition-colors hover:ring-1 hover:ring-foreground/20"
-                      style={{ background: tint }}
-                    >
+                const body = (
+                  <>
                       {best ? (
                         <span aria-label="best for this program" className="size-1.5 rounded-full bg-foreground" />
                       ) : null}
@@ -82,7 +77,26 @@ export function ProgramMatrix({
                       ) : (
                         <span>{cell.reduction.toFixed(1)}%</span>
                       )}
-                    </Link>
+                  </>
+                );
+                const look =
+                  "ui-focus ml-auto flex w-24 items-center justify-end gap-1.5 rounded-md px-2 py-1.5 font-terminal text-xs tabular-nums";
+                return (
+                  <td key={method.method} className="p-1 text-right">
+                    {slug === undefined ? (
+                      <span className={look} style={{ background: tint }}>
+                        {body}
+                      </span>
+                    ) : (
+                      <Link
+                        href={`/w/${slug}/runs/${cell.runId}`}
+                        title={`${program.name}, ${method.label}: open the trace`}
+                        className={`${look} transition-colors hover:ring-1 hover:ring-foreground/20`}
+                        style={{ background: tint }}
+                      >
+                        {body}
+                      </Link>
+                    )}
                   </td>
                 );
               })}

@@ -8,7 +8,7 @@
  * component can be reused on a page that has no viewport without guarding.
  */
 
-import { Toast as Primitive } from "radix-ui";
+import { Portal, Toast as Primitive } from "radix-ui";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { cx } from "@/lib/cx";
@@ -86,7 +86,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </Primitive.Close>
           </Primitive.Root>
         ))}
-        <Primitive.Viewport className="fixed right-0 bottom-0 z-[60] flex w-full max-w-sm flex-col gap-2 p-4 outline-none" />
+        {/* Portalled to body, so toasts sit above dialogs rather than inside the frame's stacking context. */}
+        <Portal.Root>
+          <Primitive.Viewport className="fixed right-0 bottom-0 z-[60] flex w-full max-w-sm flex-col gap-2 p-4 outline-none" />
+        </Portal.Root>
       </Primitive.Provider>
     </ToastContext.Provider>
   );
