@@ -5,8 +5,8 @@ L1 WebGL landing: ridgeline and run chart are live (R3F, bloom, raycast hover). 
 builds and publishes to GHCR from CI. README rewritten product-first. Azure still waits for the
 owner.
 
-## Integrated into main (origin/main = c0f90ec)
-- CLOUD: C1 kit, C2 suites, C3 analytics, C4 share links (both migrations applied on dev; prod
+## Integrated into main (origin/main = 0c2a3d4)
+- CLOUD: C1 kit, C2 suites, C3 analytics, C4 share links, C6 playground (both migrations applied on dev; prod
   applies them on the Vercel build).
 - CODEX: X1 /analyze, X2 service limits and access.
 - LOCAL: ramp + light glass in globals.css, WebGL charts, README, service image workflow.
@@ -31,7 +31,7 @@ owner.
   slot. Test that race.
 
 ## For CLOUD
-- C3 and C4 integrated. Rebase onto main.
+- C6 integrated (and the api key migration 044e0bb from LOCAL). Rebase onto main.
 - CODEX's X2 is on main: /methods entries now carry `available`, and the service enforces
   limits (body size, time budget, concurrency with a clean 503). If the playground or suites
   show errors from the service, surface the 503/413 cases as clear UI states.
