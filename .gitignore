@@ -93,3 +93,4 @@ engine/groq.keys
 .idea/
 .claude/
 .fleet/
+.neon

@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+.shots
+node_modules
+.next
+tsconfig.tsbuildinfo
