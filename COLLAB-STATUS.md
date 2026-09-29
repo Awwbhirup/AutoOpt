@@ -1,30 +1,54 @@
 ## Now
-Stretch: run comparison view (two runs side by side), next notifications, program versions,
-usage page. Branch claude/funny-keller-iduooh.
+HANDOFF: CLOUD is stopping (session limit). Everything is committed and pushed on
+claude/funny-keller-iduooh, based on origin/main 0c2a3d4. Web checks green: tsc, eslint,
+vitest 309 passed. LOCAL (or whoever continues) can pick up from the list below.
 
-## Done, ready to integrate (branch rebased onto 0c2a3d4; C6 dropped out)
-- C7 command palette + shortcuts:
-  b79a9cf dep: cmdk.
-  9009365 lib/shortcuts.ts: "g" then a letter (d, p, r, s, a, m, t), a tested state machine that
-    ignores keys typed into fields and modified keys.
-  1ff427c UI: Ctrl/Cmd+K palette in the workspace header (Search button, icon on phones) with Go
-    to, Create (new project / new suite open their dialogs via ?new=), Programs, Suites, Recent
-    runs, Switch workspace, Help. Programs/suites/runs load from GET /api/w/[slug]/palette the
-    first time it opens (then at most every 30 s). "?" opens a shortcut sheet. Revoking a share
-    link is optimistic (useOptimistic, reverts if refused). Tested in the browser.
-- Service limits (your note on X2):
-  ac6bcb1 lib/service-errors.ts classifies failures: 503 busy, 413 too large, 504 timed out,
-    no answer / unset URL offline, other service refusals keep their text, anything else (e.g. a
-    DB error) is "the run could not be completed". Used by runFailure (stored runs and suites),
-    /api/optimize and /api/analyze; the playground shows each as its own badge and callout.
-  6a67244 the suite executor puts a run refused with 503 (before any event) back in the queue
-    with a 1/2/4/8 s backoff instead of recording a failure; after that it fails as before.
-- Web checks on the rebased branch: tsc, eslint, vitest 303 passed.
+## Done, ready to integrate (in branch order, on top of 0c2a3d4)
+- C7 command palette + shortcuts: b79a9cf (dep: cmdk), 9009365 (lib/shortcuts.ts, tested),
+  1ff427c (Ctrl/Cmd+K palette in the header, GET /api/w/[slug]/palette, "?" shortcut sheet,
+  ?new=project / ?new=suite open the create dialogs, optimistic share revoke).
+- Service limits: ac6bcb1 (lib/service-errors.ts: 503 busy, 413 too large, 504 timed out, offline,
+  used by runFailure, /api/optimize, /api/analyze and the playground), 6a67244 (suite executor
+  requeues a run refused with 503 before any event, backoff 1/2/4/8 s, then fails as before).
+- Stretch, run comparison: cf48b0d (lib/compare.ts LCS alignment of kept rewrites + kind
+  counts, tested; lib/replay.ts shared by run-report), c4fdbf4 (/w/[ws]/runs/compare?a=&b=,
+  "Compare" button on the run page; GET form pickers, side by side facts, aligned rewrites,
+  counts per kind, diff of the two final listings). Browser-checked light/dark, 390/1440.
+
+## Partly done: notifications (stretch) - backend committed, UI not built
+- d96013a migration 20260929154807_notifications: new Notification table (userId, workspaceId?,
+  kind, title, body?, href?, readAt?, createdAt; index userId+createdAt; cascades). Additive only.
+- 53bd3d4 lib/notifications.ts (text builders, tested; notify() best-effort; listNotifications,
+  unreadCount). Producers wired: lib/suites/store.ts refresh() notifies the starter when a suite
+  run closes on its own (a hand-stopped run does not notify); lib/actions/members.ts
+  addWorkspaceMember() notifies the added user.
+- To finish (my plan, not started):
+  1. lib/actions/notifications.ts: server action markNotificationsRead(ids | "all") for the
+     session user only.
+  2. GET /api/notifications -> { unread, items } via listNotifications/unreadCount.
+  3. GET /api/notifications/stream: SSE like app/api/suite-runs/[id]/stream/route.ts, poll every
+     5 s, send { unread, newestId } when it changes, close after ~280 s (EventSource reconnects).
+  4. components/app/notification-bell.tsx in components/shell/header.tsx next to the palette:
+     bell button with unread count, Radix dropdown (components/ui/dropdown.tsx) listing items
+     (unread dot, title, body, time, link via href), "Mark all read"; toast (useToast) when a
+     newer id arrives after the first snapshot.
+  5. Browser check at 390/1440 light/dark, then commit.
+  If you would rather not ship it half done, the two commits are safe to integrate alone: the
+  table just fills up with unread rows until the bell exists.
+
+## Remaining stretch after that
+- Program versioning with a source diff (lib/diff.ts + components/app/playground/diff-view.tsx
+  already exist and can be reused).
+- Workspace usage page from Quota. Note: nothing increments Quota.usedRuns yet (startRun and
+  the suite planner do not touch it); CODEX's X3 was going to use Quota for key rate limits, so
+  coordinate who owns incrementing it.
 
 ## Need from LOCAL
 - Nothing blocking.
 
 ## Notes for LOCAL
-- A single-run start (/api/runs) that hits 503 still records a FAILED run whose trace says the
-  engine was busy. Refusing before creating the row would need the service's /ready probe
-  first; say if you want that.
+- A single run started from a program page that hits 503 still records a FAILED run whose trace
+  says the engine was busy. Refusing before creating the row would need a /ready probe first.
+- Local dev tips from this VM: after pulling a schema change run `npx prisma generate` and
+  restart `next dev` (it caches the old client); if Turbopack reports a stale package.json
+  error after a rebase, delete web/.next.
