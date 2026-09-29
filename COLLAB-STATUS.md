@@ -1,45 +1,35 @@
 ## Now
-C4 share links: starting, branch claude/funny-keller-iduooh
+C6 playground upgrade: starting (X1 analyze() is on main), branch claude/funny-keller-iduooh
 
-## Done, ready to integrate
-- C1 ui kit + states: rebased onto d10c6b1; commits "the app ui kit needs radix primitives"
-  through "the app pages on the kit, with loading, empty and error states". Checks green.
-- C2 benchmark suites: 3 code commits on top of C1:
-  ed0bf35 migration 20260929145530_suite_programs (additive only: SuiteProgram join table,
-    BenchmarkSuite.createdById, SuiteRun.startedById + SuiteRun.grid, all nullable or defaulted).
-    `prisma format` also realigned whitespace in schema.prisma; no other model changed.
-  b9198c3 lib: method catalog (lib/methods.ts, controls = fixed_pipeline + random_baseline),
-    grid planning, results summary + CSV, queue executor with an atomic claim
-    (UPDATE ... FOR UPDATE SKIP LOCKED), engine status probe in lib/engine.ts. Unit tested.
-  f62d900 UI: /w/[ws]/suites, /suites/[id], /suites/[id]/runs/[runId] (results), SSE progress
-    at /api/suite-runs/[id]/stream, CSV at /api/suite-runs/[id]/csv, "Suites" in the nav.
-  Execution: startSuiteRun plans all runs QUEUED, then after() works the queue for up to 250 s.
-  If it stops (Vercel time limit), the results page's progress stream resumes it while open.
-  Engine offline: pages show a note and the Run button is disabled; nothing crashes.
-  Checked end to end here: 15 programs x 4 methods = 60 runs, live progress, charts filled in,
-  CSV downloaded, no console errors, no overflow at 390/1440 in light and dark.
-  Web checks: tsc, eslint, vitest (261 passed).
-
-- C3 analytics: 3c9f9ec (lib/analytics.ts + repositories/analytics.ts, tested) and 6361cf4
-  (/w/[ws]/analytics page, "Analytics" in the nav and on the dashboard). Range filter 7/30/90
-  days/all. Headline tiles: mean reduction with controls, search methods only, runs and success
-  share, output match rate. Runs per day, cost reduction per method (box + dots, mean and median,
-  controls marked), tabs for category x method means, transformation acceptance + reject reasons,
-  verification outcomes + verifier verdicts, slowest programs. No schema change. Checks green
-  (269 tests); screenshots light/dark, 390/1440, no overflow.
+## Done, ready to integrate (branch rebased onto 0686bcb; C1 and C2 dropped out)
+- C3 analytics: 0ab84b1 (lib/analytics.ts + lib/repositories/analytics.ts, tested) and 5094892
+  (/w/[ws]/analytics, "Analytics" in the nav and on the dashboard). Range 7/30/90 days/all.
+  Headline tiles: mean reduction with controls, search methods only, runs + success share,
+  output match rate. Runs per day, cost reduction per method (box + dots, mean and median,
+  controls marked), tabs: category x method means, transformation acceptance share + reject
+  reasons, verification outcomes + verifier verdicts, slowest programs. No schema change.
+- C4 share links:
+  b67c103 migration 20260929..._share_suite_runs. Additive: ShareLink.runId becomes nullable,
+    new suiteRunId (FK, cascade), viewCount (default 0), lastViewedAt, and a CHECK that exactly
+    one of runId/suiteRunId is set (every existing row has runId, so it holds on prod data).
+  82ff3bb lib: tokens (18 random bytes, base64url), expiry never/1d/7d/30d, create + revoke
+    actions (revoke stays ADMIN+ as the permission table says), audit actions "share.created"
+    and "share.revoked" added to AuditAction in lib/repositories/audit.ts (CODEX: X3 will add
+    api key actions to the same union; trivial merge), resolver for /s/[token].
+  99bddd3 UI: Share dialog on run pages and suite results (create, copy, list, revoke),
+    /w/[ws]/shares (all links, linked from People), public /s/[token] for a run or suite results
+    (noindex, same report components members see, no links back into the workspace), revoked /
+    expired / unknown pages, and a dynamic OG card per link via next/og.
+  Checked end to end: create, copy, open logged out, OG image 200 image/png, view counted,
+  revoke, revoked page, unknown token page. No console errors, no overflow at 390/1440.
+- 8c78ccb removes my :root ramp and light glass from theme.css (globals.css has them).
+- Web checks on the rebased branch: tsc, eslint, vitest 275 passed.
 
 ## Need from LOCAL
-- For CODEX (service/** is theirs now): please add `available: bool` to each /methods entry,
-  false for a model arm when neither GEMINI_API_KEY nor GROQ_API_KEY is set (the chain would run
-  the stub otherwise). web/lib/engine.ts already reads it if present and treats absence as
-  available, so nothing breaks before or after. I had written this in service/ before the
-  ownership change and dropped the commit unpushed; it never reached the branch.
-- Ramp on :root + light glass: will delete my copies in web/components/ui/theme.css once your
-  globals.css change is on main.
+- (relayed already) CODEX: `available` on /methods.
 
 ## Notes for LOCAL
-- I did not touch service/** or web/lib/service.ts in anything pushed. lib/engine.ts only calls
-  methods() from service.ts.
-- Suite runs appear in the Runs list too (they are runs); fine for now.
-- scripts/shoot.mjs needs `npx playwright install` in this VM; I use /opt/pw-browsers/chromium
-  via my own script instead.
+- Shared run/suite reports live in web/components/app/run-report.tsx and suite-report.tsx; the
+  workspace pages use them too, so the public page cannot drift from what members see.
+- metadataBase: the OG image URL resolves from Vercel's production URL automatically; if you set
+  a custom domain, a metadataBase in the root layout would make previews use it.
