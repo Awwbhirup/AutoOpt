@@ -51,3 +51,7 @@ export function isUniqueViolation(error: unknown): boolean {
 export const NO_WORKSPACE = "That workspace does not exist.";
 
 export const SIGNED_OUT = "Your session has ended. Sign in and try again.";
+
+/** Said when the compute service does not answer, which is normal in some deployments. */
+export const ENGINE_OFFLINE =
+  "The optimization engine is offline, so nothing can run right now. Try again later.";
