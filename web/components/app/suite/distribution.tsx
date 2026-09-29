@@ -71,6 +71,7 @@ export function ReductionDistribution({ methods }: { methods: MethodResult[] }) 
                 </div>
                 <div className="font-terminal text-xs text-muted tabular-nums">
                   n={spread.n}
+                  {spread.mean === null ? "" : `, mean ${fmt(spread.mean)}`}
                   {method.pending > 0 ? `, ${method.pending} to go` : ""}
                 </div>
               </div>

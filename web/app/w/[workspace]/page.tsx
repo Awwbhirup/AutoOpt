@@ -106,9 +106,14 @@ export default async function WorkspaceDashboard({
         title={workspace.name}
         lead="Programs kept here, and every run the engine has made of them."
         actions={
-          <ButtonLink href={`/w/${slug}/projects`} variant="secondary">
-            Projects
-          </ButtonLink>
+          <>
+            <ButtonLink href={`/w/${slug}/projects`} variant="secondary">
+              Projects
+            </ButtonLink>
+            <ButtonLink href={`/w/${slug}/analytics`} variant="primary">
+              Analytics
+            </ButtonLink>
+          </>
         }
       />
 
