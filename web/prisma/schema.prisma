@@ -355,6 +355,12 @@ model ApiKey {
   expiresAt   DateTime?
   createdAt   DateTime  @default(now())
 
+  /// Fixed one-minute window for the per-key rate limit. The window restarts
+  /// on the first request after it has passed, in the same update that counts.
+  requestsPerMinute Int      @default(60)
+  windowStart       DateTime @default(now())
+  windowRequests    Int      @default(0)
+
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
