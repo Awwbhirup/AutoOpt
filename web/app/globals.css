@@ -38,6 +38,14 @@
   --accent-soft: #ecfdf5;
   --refused: #9f1239;
   --refused-soft: #fff1f2;
+
+  /* The rank ramp, for app charts as well as the landing page. Same values
+     as the .landing scope below. */
+  --ramp-0: #8b5cf6;
+  --ramp-1: #5b7cfa;
+  --ramp-2: #2aa8f2;
+  --ramp-3: #1fd4c3;
+  --ramp-4: #3ef2a0;
 }
 
 @theme inline {
@@ -255,6 +263,17 @@ body {
 
   .glass--bar {
     border-radius: 0;
+  }
+
+  /* Glass was tuned for the dark landing page; on paper its dark rim reads as a smudge. */
+  @media (prefers-color-scheme: light) {
+    .glass:not(.landing *) {
+      background: color-mix(in srgb, var(--surface) 72%, transparent);
+      box-shadow:
+        inset 0 0 0 1px var(--border),
+        inset 0 1px 0 0 rgb(255 255 255 / 0.9),
+        0 14px 36px -24px rgb(40 36 20 / 0.35);
+    }
   }
 
   @media (prefers-reduced-transparency: reduce) {
