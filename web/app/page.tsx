@@ -26,7 +26,7 @@ import Link from "next/link";
 import { Backdrop } from "@/components/landing/backdrop";
 import { Glass, GlassFilters } from "@/components/landing/glass";
 import { KineticHeading } from "@/components/landing/kinetic-heading";
-import { MethodRidgeline } from "@/components/landing/method-ridgeline";
+import { MethodRidgeline3D } from "@/components/landing/method-ridgeline-3d";
 import { Reveal } from "@/components/landing/reveal";
 import { RecordedRun } from "@/components/landing/recorded-run";
 import { SmoothScroll } from "@/components/landing/smooth-scroll";
@@ -366,7 +366,7 @@ export default function Home() {
           </div>
 
           <Glass className="mt-10 overflow-hidden p-5">
-            <MethodRidgeline />
+            <MethodRidgeline3D />
           </Glass>
         </Reveal>
 
