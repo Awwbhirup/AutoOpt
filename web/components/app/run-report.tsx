@@ -13,31 +13,15 @@ import { FinalVerdict } from "@/components/trace/final-verdict";
 import { TraceStepList } from "@/components/trace/step-list";
 import { TacListing } from "@/components/trace/tac-listing";
 import { Callout } from "@/components/ui/surface";
-import { streamedEvent, type StreamedEvent } from "@/lib/events";
+import { replayEvents } from "@/lib/replay";
 import { foldTrace } from "@/lib/trace";
-
-/**
- * Stored payloads were parsed once on the way in, so one that no longer parses
- * means the engine vocabulary has moved under it. Counted and reported rather
- * than thrown, so a few unreadable rows do not take the trace down with them.
- */
-function replay(rows: readonly { payload: unknown }[]): { events: StreamedEvent[]; unreadable: number } {
-  const events: StreamedEvent[] = [];
-  let unreadable = 0;
-  for (const row of rows) {
-    const parsed = streamedEvent.safeParse(row.payload);
-    if (parsed.success) events.push(parsed.data);
-    else unreadable += 1;
-  }
-  return { events, unreadable };
-}
 
 export function RunReport({
   run,
 }: {
   run: { status: RunStatus; error: string | null; events: readonly { payload: unknown }[] };
 }) {
-  const { events, unreadable } = replay(run.events);
+  const { events, unreadable } = replayEvents(run.events);
   const trace = foldTrace(events);
 
   return (
