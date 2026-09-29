@@ -35,6 +35,7 @@ export function WorkspaceHeader({
     { href: base, label: "Dashboard", exact: true },
     { href: `${base}/projects`, label: "Projects" },
     { href: `${base}/runs`, label: "Runs" },
+    { href: `${base}/suites`, label: "Suites" },
     { href: `${base}/settings`, label: "People" },
     // The page itself returns a 404 to anyone else, so leaving this out is
     // about not offering a dead end rather than about keeping them out.
