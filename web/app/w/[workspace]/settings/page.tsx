@@ -121,6 +121,17 @@ export default async function SettingsPage({
               </Link>
             </>
           ) : null}
+          . Programs and runs can also be driven from scripts with an{" "}
+          <Link
+            href={`/w/${slug}/settings/api-keys`}
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            API key
+          </Link>
+          ; see the{" "}
+          <Link href="/docs/api" className="underline underline-offset-4 hover:text-foreground">
+            API reference
+          </Link>
           .
         </p>
       </div>

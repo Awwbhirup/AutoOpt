@@ -27,6 +27,10 @@ const WORDING: Record<string, string> = {
   "member.removed": "removed",
   "share.created": "shared",
   "share.revoked": "revoked the link",
+  "api_key.created": "created the API key",
+  "api_key.revoked": "revoked the API key",
+  "api.program.created": "added a program through the API:",
+  "api.run.started": "started a run through the API:",
 };
 
 /**
@@ -43,6 +47,10 @@ function detail(entry: AuditLogEntry): string {
   if (entry.action.startsWith("share.")) {
     return typeof at.label === "string" ? at.label : entry.resourceId;
   }
+  if (entry.action.startsWith("api_key.")) {
+    return typeof at.name === "string" ? at.name : entry.resourceId;
+  }
+  if (entry.action.startsWith("api.")) return entry.resourceId;
   const who = typeof at.email === "string" ? at.email : entry.resourceId;
 
   if (entry.action === "member.role_changed") {

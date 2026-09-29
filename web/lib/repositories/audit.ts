@@ -19,7 +19,11 @@ export type AuditAction =
   | "member.role_changed"
   | "member.removed"
   | "share.created"
-  | "share.revoked";
+  | "share.revoked"
+  | "api_key.created"
+  | "api_key.revoked"
+  | "api.program.created"
+  | "api.run.started";
 
 export interface AuditEntry {
   workspaceId: string;
