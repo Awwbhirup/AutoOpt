@@ -33,16 +33,17 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts     Account[]
-  sessions     Session[]
-  memberships  Membership[]
-  programs     Program[]
-  runs         Run[]
-  apiKeys      ApiKey[]
-  auditEntries AuditLog[]
-  shareLinks   ShareLink[]
-  suites       BenchmarkSuite[]
-  suiteRuns    SuiteRun[]
+  accounts      Account[]
+  sessions      Session[]
+  memberships   Membership[]
+  programs      Program[]
+  runs          Run[]
+  apiKeys       ApiKey[]
+  auditEntries  AuditLog[]
+  shareLinks    ShareLink[]
+  suites        BenchmarkSuite[]
+  suiteRuns     SuiteRun[]
+  notifications Notification[]
 }
 
 model Account {
@@ -100,12 +101,13 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships Membership[]
-  projects    Project[]
-  suites      BenchmarkSuite[]
-  apiKeys     ApiKey[]
-  auditLog    AuditLog[]
-  quota       Quota?
+  memberships   Membership[]
+  projects      Project[]
+  suites        BenchmarkSuite[]
+  apiKeys       ApiKey[]
+  auditLog      AuditLog[]
+  quota         Quota?
+  notifications Notification[]
 }
 
 model Membership {
@@ -384,6 +386,27 @@ model AuditLog {
 
   @@index([workspaceId, createdAt])
   @@index([actorId])
+}
+
+/// Something a user should hear about without having to look: a suite they
+/// started finished, someone added them to a workspace. The text is written
+/// when the event happens, so the entry still reads right after renames.
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  workspaceId String?
+  kind        String
+  title       String
+  body        String?
+  /// Where clicking it goes, a path inside the app.
+  href        String?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model Quota {
