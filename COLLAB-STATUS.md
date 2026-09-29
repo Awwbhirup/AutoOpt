@@ -1,7 +1,6 @@
 ## Now
-HANDOFF: CLOUD is stopping (session limit). Everything is committed and pushed on
-claude/funny-keller-iduooh, based on origin/main 0c2a3d4. Web checks green: tsc, eslint,
-vitest 309 passed. LOCAL (or whoever continues) can pick up from the list below.
+Stretch: program versioning with a source diff. Branch claude/funny-keller-iduooh, based on
+0c2a3d4. Everything below is pushed; web checks green (vitest 309 passed).
 
 ## Done, ready to integrate (in branch order, on top of 0c2a3d4)
 - C7 command palette + shortcuts: b79a9cf (dep: cmdk), 9009365 (lib/shortcuts.ts, tested),
@@ -15,28 +14,16 @@ vitest 309 passed. LOCAL (or whoever continues) can pick up from the list below.
   "Compare" button on the run page; GET form pickers, side by side facts, aligned rewrites,
   counts per kind, diff of the two final listings). Browser-checked light/dark, 390/1440.
 
-## Partly done: notifications (stretch) - backend committed, UI not built
-- d96013a migration 20260929154807_notifications: new Notification table (userId, workspaceId?,
-  kind, title, body?, href?, readAt?, createdAt; index userId+createdAt; cascades). Additive only.
-- 53bd3d4 lib/notifications.ts (text builders, tested; notify() best-effort; listNotifications,
-  unreadCount). Producers wired: lib/suites/store.ts refresh() notifies the starter when a suite
-  run closes on its own (a hand-stopped run does not notify); lib/actions/members.ts
-  addWorkspaceMember() notifies the added user.
-- To finish (my plan, not started):
-  1. lib/actions/notifications.ts: server action markNotificationsRead(ids | "all") for the
-     session user only.
-  2. GET /api/notifications -> { unread, items } via listNotifications/unreadCount.
-  3. GET /api/notifications/stream: SSE like app/api/suite-runs/[id]/stream/route.ts, poll every
-     5 s, send { unread, newestId } when it changes, close after ~280 s (EventSource reconnects).
-  4. components/app/notification-bell.tsx in components/shell/header.tsx next to the palette:
-     bell button with unread count, Radix dropdown (components/ui/dropdown.tsx) listing items
-     (unread dot, title, body, time, link via href), "Mark all read"; toast (useToast) when a
-     newer id arrives after the first snapshot.
-  5. Browser check at 390/1440 light/dark, then commit.
-  If you would rather not ship it half done, the two commits are safe to integrate alone: the
-  table just fills up with unread rows until the bell exists.
+- Notifications (stretch), done:
+  d96013a migration 20260929154807_notifications (new Notification table, additive only).
+  53bd3d4 lib/notifications.ts (tested); notices written when a suite run closes on its own
+    (to whoever started it) and when a member is added (to them).
+  e8a1a7e bell in the workspace header: unread count over SSE (/api/notifications/stream, polls
+    every 5 s, closes before 300 s and the EventSource reconnects), list from /api/notifications
+    on open, toast for a new notice, mark one or all read (server action, optimistic).
+    Browser-checked: baseline count, live arrival as a toast, mark all read persisted.
 
-## Remaining stretch after that
+## Remaining stretch
 - Program versioning with a source diff (lib/diff.ts + components/app/playground/diff-view.tsx
   already exist and can be reused).
 - Workspace usage page from Quota. Note: nothing increments Quota.usedRuns yet (startRun and
