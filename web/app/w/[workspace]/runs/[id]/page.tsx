@@ -15,6 +15,7 @@ import { RunStatusBadge } from "@/components/shell/run-table";
 import { formatWhen } from "@/components/shell/timestamp";
 import { RunReport } from "@/components/app/run-report";
 import { ShareDialog } from "@/components/app/share/share-dialog";
+import { ButtonLink } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/surface";
 import { authorize } from "@/lib/authorize";
 import { prisma } from "@/lib/db";
@@ -73,6 +74,9 @@ export default async function RunDetailPage({
         actions={
           <>
             <RunStatusBadge status={run.status} />
+            <ButtonLink href={`/w/${slug}/runs/compare?a=${run.id}`} variant="secondary">
+              Compare
+            </ButtonLink>
             <ShareDialog
               slug={slug}
               target={{ runId: run.id }}
