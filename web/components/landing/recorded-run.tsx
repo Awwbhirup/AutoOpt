@@ -157,7 +157,7 @@ export function RecordedRun() {
               finished ? "" : "animate-pulse"
             }`}
           />
-          conditional_001 · greedy · recorded
+          conditional_001 / greedy / recorded
         </p>
         {reducedMotion ? null : (
           <button
