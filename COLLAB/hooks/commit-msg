@@ -1,0 +1,19 @@
+#!/bin/sh
+# Reject commit messages that carry attribution, assistant references or non-ASCII.
+msg="$1"
+body=$(grep -v '^#' "$msg")
+
+if printf '%s' "$body" | LC_ALL=C grep -q '[^ -~	]'; then
+  echo "commit-msg: non-ASCII character in message" >&2; exit 1
+fi
+if printf '%s' "$body" | grep -qiE 'co-authored-by|generated with|claude|anthropic|chatgpt|copilot|\bai\b|assistant|llm-generated'; then
+  echo "commit-msg: attribution or assistant reference in message" >&2; exit 1
+fi
+if printf '%s' "$body" | grep -qE '^\s*[-*] |^#+ |\*\*'; then
+  echo "commit-msg: no bullet lists, headers or bold in messages" >&2; exit 1
+fi
+subject=$(printf '%s\n' "$body" | head -n1)
+if [ ${#subject} -gt 72 ]; then
+  echo "commit-msg: subject over 72 characters" >&2; exit 1
+fi
+exit 0

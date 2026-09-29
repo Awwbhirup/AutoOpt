@@ -1,0 +1,32 @@
+#!/bin/sh
+# Guards for anything headed to main: no agent files, no mixed status commits,
+# no non-ASCII or assistant references in added lines.
+files=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$files" ] && exit 0
+
+branch=$(git symbolic-ref --short -q HEAD)
+[ "$branch" = "collab" ] && exit 0
+
+if printf '%s\n' "$files" | grep -qE '(^|/)(CLAUDE\.md|\.mcp\.json|AGENTS\.md)$|^\.claude/|^COLLAB/|^PLAN/'; then
+  echo "pre-commit: agent or planning file staged" >&2; exit 1
+fi
+
+if printf '%s\n' "$files" | grep -qx 'COLLAB-STATUS.md'; then
+  if [ "$(printf '%s\n' "$files" | wc -l)" -ne 1 ]; then
+    echo "pre-commit: COLLAB-STATUS.md must be committed on its own" >&2; exit 1
+  fi
+  exit 0
+fi
+
+added=$(git diff --cached -U0 --diff-filter=ACMR -- . ':!*package-lock.json' ':!*.png' ':!*.jpg' ':!*.glb' ':!*.woff2' | grep '^+' | grep -v '^+++')
+if printf '%s' "$added" | LC_ALL=C grep -n '[^ -~	]' >/dev/null; then
+  echo "pre-commit: non-ASCII in added lines:" >&2
+  printf '%s\n' "$added" | LC_ALL=C grep -n '[^ -~	]' | head -5 >&2
+  exit 1
+fi
+if printf '%s' "$added" | grep -niE 'claude|anthropic|generated (by|with)|co-authored' | head -3 | grep -q .; then
+  echo "pre-commit: assistant reference in added lines:" >&2
+  printf '%s\n' "$added" | grep -niE 'claude|anthropic|generated (by|with)|co-authored' | head -3 >&2
+  exit 1
+fi
+exit 0
