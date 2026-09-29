@@ -11,6 +11,12 @@ If your git proxy lets you push other branch names, you may use `cloud/<task>` b
 one session branch. Same rules apply. Never open pull requests (PR pages outlive branches and
 would show the collaboration publicly).
 
+## CODEX (third worker, local)
+CODEX works in the local worktree `.claude/worktrees/codex` on branch `codex/work`, which is never
+pushed. Its status is `COLLAB-STATUS.md` at the root of that branch, same rules as CLOUD's.
+LOCAL cherry-picks its code commits onto main exactly as for CLOUD. CLOUD can read CODEX's work
+only once it is on main; if CLOUD needs something from CODEX sooner, ask LOCAL in your status.
+
 ## Status files: each file has exactly one writer
 - `COLLAB/STATUS-local.md` on `collab`: written by LOCAL. You read it.
 - CLOUD status: write it to `COLLAB-STATUS.md` at the **repo root of your session branch**.
