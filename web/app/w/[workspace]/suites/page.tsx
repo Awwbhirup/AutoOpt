@@ -31,8 +31,15 @@ export const metadata: Metadata = {
   description: "Benchmark suites: the same programs through several methods.",
 };
 
-export default async function SuitesPage({ params }: { params: Promise<{ workspace: string }> }) {
+export default async function SuitesPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ workspace: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { workspace: slug } = await params;
+  const openNew = (await searchParams).new === "suite";
   const { workspace, principal } = await requireWorkspace(slug);
 
   const [suites, programs, projects, engine] = await Promise.all([
@@ -105,10 +112,10 @@ export default async function SuitesPage({ params }: { params: Promise<{ workspa
     },
   ];
 
-  const create =
-    mayCreate && programs.length > 0 ? (
-      <NewSuiteDialog slug={slug} programs={pickable} methods={methods} />
-    ) : null;
+  const canCreate = mayCreate && programs.length > 0;
+  const create = canCreate ? (
+    <NewSuiteDialog slug={slug} programs={pickable} methods={methods} defaultOpen={openNew} />
+  ) : null;
 
   return (
     <PageMain>
@@ -130,9 +137,9 @@ export default async function SuitesPage({ params }: { params: Promise<{ workspa
                 <ButtonLink href={`/w/${slug}/projects`} variant="primary" size="sm">
                   Add programs first
                 </ButtonLink>
-              ) : (
-                create
-              )
+              ) : canCreate ? (
+                <NewSuiteDialog slug={slug} programs={pickable} methods={methods} label="Create the first suite" />
+              ) : null
             }
           >
             A suite runs every program it holds through every method it names, then shows the

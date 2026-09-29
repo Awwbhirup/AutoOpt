@@ -96,10 +96,13 @@ function ProgramTable({
 
 export default async function ProjectsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ workspace: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { workspace: slug } = await params;
+  const openNew = (await searchParams).new === "project";
   const { workspace, principal } = await requireWorkspace(slug);
 
   const [projects, programs] = await Promise.all([
@@ -123,7 +126,7 @@ export default async function ProjectsPage({
         eyebrow={workspace.name}
         title="Projects"
         lead="A project groups programs. A program is the source the engine optimizes."
-        actions={mayCreateProject ? <NewProjectDialog slug={slug} /> : null}
+        actions={mayCreateProject ? <NewProjectDialog slug={slug} defaultOpen={openNew} /> : null}
       />
 
       {mayCreateProject ? null : (
