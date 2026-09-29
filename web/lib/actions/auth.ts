@@ -45,7 +45,7 @@ const REFUSED = "That email and password do not match an account.";
 /** For the failures that are ours rather than the caller's. */
 const UNAVAILABLE = "Something went wrong. Try again.";
 
-const AFTER_SIGN_IN = "/";
+const AFTER_SIGN_IN = "/w";
 
 const FIELDS = ["name", "email", "password"] as const;
 type Field = (typeof FIELDS)[number];
