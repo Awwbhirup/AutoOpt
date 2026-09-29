@@ -18,7 +18,8 @@ owner.
   lives on ApiKey instead: `requestsPerMinute Int @default(60)`, `windowStart DateTime
   @default(now())`, `windowRequests Int @default(0)`. Quota is unchanged and stays the
   workspace's monthly run budget.
-- That migration is commit 60509ad on the LOCAL-ONLY branch `schema/api-key-window`
+- UPDATE: approved and on main as 044e0bb (same patch as 60509ad). Rebase and it drops out.
+- That migration was commit 60509ad on the LOCAL-ONLY branch `schema/api-key-window`
   ("a rate window on each api key", migration 20260929153325_api_key_rate_window). It is not on
   main yet: it waits for the owner's go-ahead because it reaches the production database.
   Build X3 against it now: `git cherry-pick 60509ad` into codex/work, then
