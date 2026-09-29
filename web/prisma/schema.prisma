@@ -305,9 +305,10 @@ model SuiteRun {
   startedAt   DateTime  @default(now())
   finishedAt  DateTime?
 
-  suite     BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
-  startedBy User?          @relation(fields: [startedById], references: [id], onDelete: SetNull)
-  runs      Run[]
+  suite      BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  startedBy  User?          @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  runs       Run[]
+  shareLinks ShareLink[]
 
   @@index([suiteId])
   @@index([startedById])
@@ -316,18 +317,26 @@ model SuiteRun {
 // --- sharing, keys, audit, quota --------------------------------------------
 
 model ShareLink {
-  id          String    @id @default(cuid())
-  runId       String
-  createdById String?
-  token       String    @unique
-  expiresAt   DateTime?
-  revokedAt   DateTime?
-  createdAt   DateTime  @default(now())
+  id           String    @id @default(cuid())
+  /// Exactly one of runId and suiteRunId is set: a link shares one run or one
+  /// suite run's results.
+  runId        String?
+  suiteRunId   String?
+  createdById  String?
+  token        String    @unique
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  /// Counted on each page view, so the owner can see whether a link is used.
+  viewCount    Int       @default(0)
+  lastViewedAt DateTime?
+  createdAt    DateTime  @default(now())
 
-  run       Run   @relation(fields: [runId], references: [id], onDelete: Cascade)
-  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  run       Run?      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  suiteRun  SuiteRun? @relation(fields: [suiteRunId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([runId])
+  @@index([suiteRunId])
 }
 
 model ApiKey {
