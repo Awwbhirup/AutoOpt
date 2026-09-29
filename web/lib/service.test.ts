@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { optimize, readLines, ServiceError } from "./service";
+import { analyzeSource, optimize, readLines, ServiceError } from "./service";
 
 const RUN_STARTED = {
   kind: "run_started",
@@ -108,14 +108,14 @@ describe("splitting the stream into lines", () => {
   it("handles a multi-byte character split across chunks", async () => {
     // The decoder is told the stream continues, so a half-arrived character is
     // held back rather than turned into a replacement character.
-    const text = '{"rationale":"café"}';
+    const text = '{"rationale":"caf\u00e9"}';
     const encoder = new TextEncoder();
     const bytes = encoder.encode(text + "\n");
 
     // Cut inside the two-byte sequence, not merely next to it. Derived rather
     // than written as a constant, so the split stays mid-character if the
     // string above is ever edited.
-    const cut = encoder.encode(text.slice(0, text.indexOf("é"))).length + 1;
+    const cut = encoder.encode(text.slice(0, text.indexOf("\u00e9"))).length + 1;
     expect(bytes[cut] & 0b1100_0000).toBe(0b1000_0000); // a continuation byte
 
     const split = new ReadableStream<Uint8Array>({
@@ -217,5 +217,45 @@ describe("refusing what it does not understand", () => {
   it("complains when the service address is not configured", async () => {
     delete process.env.AUTOOPT_SERVICE_URL;
     await expect(collect(optimize({ source: "x" }))).rejects.toThrow(/AUTOOPT_SERVICE_URL/);
+  });
+});
+
+describe("source analysis", () => {
+  it("parses TAC, graph edges, and block facts", async () => {
+    const analysis = {
+      tac: [{ index: 0, text: "print x" }],
+      blocks: [{
+        id: 0, start: 0, stop: 1,
+        instructions: [{ index: 0, text: "print x" }],
+        reachable: true, loop_depth: 0,
+        facts: {
+          live_in: ["x"], live_out: [], reaching_in: [], reaching_out: [],
+          available_in: [], available_out: [],
+        },
+      }],
+      edges: [],
+    };
+    const fetchStub = vi.fn(async () => Response.json(analysis));
+    vi.stubGlobal("fetch", fetchStub);
+    expect(await analyzeSource("input x; print(x);")).toEqual(analysis);
+    expect(fetchStub).toHaveBeenCalledWith("http://service.invalid/analyze", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ source: "input x; print(x);" }),
+    }));
+  });
+
+  it("preserves a positioned source error", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      detail: { kind: "parse", message: "expected expression", line: 2, column: 9 },
+    }, { status: 422 })));
+    await expect(analyzeSource("bad")).rejects.toMatchObject({
+      name: "SourceError",
+      diagnostic: { kind: "parse", line: 2, column: 9 },
+    });
+  });
+
+  it("rejects a malformed service response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ tac: [], blocks: [], edges: [{ kind: "maybe" }] })));
+    await expect(analyzeSource("input x;")).rejects.toThrow(/invalid analysis/);
   });
 });

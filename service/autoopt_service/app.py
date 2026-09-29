@@ -7,6 +7,8 @@ happened, and forgets it.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from autoopt.arms import LLM_ARMS
 from autoopt.events import (
     OptimizationType,
@@ -14,16 +16,21 @@ from autoopt.events import (
     VerificationMethod,
     VerificationVerdict,
 )
+from autoopt.lang import LexError, MiniLangError, ParseError, SemanticError
 from autoopt.search import METHOD_NAMES
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
+from .analysis import analyze
 from .schemas import (
+    AnalyzeRequest,
+    AnalyzeResponse,
     HealthResponse,
     MethodInfo,
     MethodsResponse,
     OptimizeRequest,
     RunFailed,
+    SourceDiagnostic,
     VocabularyResponse,
     engine_event_kinds,
 )
@@ -34,6 +41,26 @@ app = FastAPI(
     version="0.1.0",
     summary="Runs the optimization loop and streams its decision log.",
 )
+
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+def analyze_source(request: AnalyzeRequest) -> AnalyzeResponse:
+    try:
+        return analyze(request.source)
+    except MiniLangError as error:
+        kind: Literal["lex", "parse", "semantic"]
+        if isinstance(error, LexError):
+            kind = "lex"
+        elif isinstance(error, ParseError):
+            kind = "parse"
+        elif isinstance(error, SemanticError):
+            kind = "semantic"
+        else:
+            raise
+        diagnostic = SourceDiagnostic(
+            kind=kind, message=error.message, line=error.line, column=error.column
+        )
+        raise HTTPException(status_code=422, detail=diagnostic.model_dump()) from error
 
 
 @app.get("/health", response_model=HealthResponse)

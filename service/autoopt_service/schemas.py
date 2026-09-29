@@ -98,6 +98,58 @@ class VocabularyResponse(BaseModel):
     reject_reasons: list[str]
 
 
+class AnalyzeRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=MAX_SOURCE_CHARS)
+
+
+class SourceDiagnostic(BaseModel):
+    kind: Literal["lex", "parse", "semantic"]
+    message: str
+    line: int = Field(ge=1)
+    column: int = Field(ge=1)
+
+
+class TacLine(BaseModel):
+    index: int
+    text: str
+
+
+class AvailableFact(BaseModel):
+    expression: list[str]
+    holder: str
+
+
+class BlockFacts(BaseModel):
+    live_in: list[str]
+    live_out: list[str]
+    reaching_in: list[int]
+    reaching_out: list[int]
+    available_in: list[AvailableFact]
+    available_out: list[AvailableFact]
+
+
+class AnalyzeBlock(BaseModel):
+    id: int
+    start: int
+    stop: int
+    instructions: list[TacLine]
+    reachable: bool
+    loop_depth: int
+    facts: BlockFacts
+
+
+class AnalyzeEdge(BaseModel):
+    source: int
+    target: int
+    kind: Literal["jump", "true", "false", "fallthrough"]
+
+
+class AnalyzeResponse(BaseModel):
+    tac: list[TacLine]
+    blocks: list[AnalyzeBlock]
+    edges: list[AnalyzeEdge]
+
+
 def engine_event_kinds() -> list[str]:
     """The `kind` discriminator of every event the engine can emit.
 

@@ -10,6 +10,65 @@
  */
 
 import { type StreamedEvent, streamedEvent } from "./events";
+import { z } from "zod";
+
+const tacLine = z.object({ index: z.number().int().nonnegative(), text: z.string() });
+const availableFact = z.object({ expression: z.array(z.string()), holder: z.string() });
+const blockFacts = z.object({
+  live_in: z.array(z.string()),
+  live_out: z.array(z.string()),
+  reaching_in: z.array(z.number().int().nonnegative()),
+  reaching_out: z.array(z.number().int().nonnegative()),
+  available_in: z.array(availableFact),
+  available_out: z.array(availableFact),
+});
+
+export const analyzeResult = z.object({
+  tac: z.array(tacLine),
+  blocks: z.array(z.object({
+    id: z.number().int().nonnegative(),
+    start: z.number().int().nonnegative(),
+    stop: z.number().int().nonnegative(),
+    instructions: z.array(tacLine),
+    reachable: z.boolean(),
+    loop_depth: z.number().int().nonnegative(),
+    facts: blockFacts,
+  })),
+  edges: z.array(z.object({
+    source: z.number().int().nonnegative(),
+    target: z.number().int().nonnegative(),
+    kind: z.enum(["jump", "true", "false", "fallthrough"]),
+  })),
+});
+
+export type AnalyzeResult = z.infer<typeof analyzeResult>;
+
+const sourceDiagnostic = z.object({
+  kind: z.enum(["lex", "parse", "semantic"]),
+  message: z.string(),
+  line: z.number().int().positive(),
+  column: z.number().int().positive(),
+});
+
+export async function analyzeSource(source: string, signal?: AbortSignal): Promise<AnalyzeResult> {
+  const response = await fetch(`${baseUrl()}/analyze`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ source }),
+    signal,
+  });
+  const body: unknown = await response.json().catch(() => null);
+  if (response.status === 422) {
+    const diagnostic = sourceDiagnostic.safeParse(
+      body && typeof body === "object" && "detail" in body ? body.detail : null,
+    );
+    if (diagnostic.success) throw new SourceError(diagnostic.data);
+  }
+  if (!response.ok) throw new ServiceError("compute service could not analyze the program", response.status);
+  const result = analyzeResult.safeParse(body);
+  if (!result.success) throw new ServiceError("compute service returned an invalid analysis");
+  return result.data;
+}
 
 export interface OptimizeOptions {
   source: string;
@@ -31,6 +90,13 @@ export class ServiceError extends Error {
   ) {
     super(message);
     this.name = "ServiceError";
+  }
+}
+
+export class SourceError extends ServiceError {
+  constructor(readonly diagnostic: z.infer<typeof sourceDiagnostic>) {
+    super(diagnostic.message, 422);
+    this.name = "SourceError";
   }
 }
 
