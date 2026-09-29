@@ -17,7 +17,9 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 export type AuditAction =
   | "member.added"
   | "member.role_changed"
-  | "member.removed";
+  | "member.removed"
+  | "share.created"
+  | "share.revoked";
 
 export interface AuditEntry {
   workspaceId: string;
