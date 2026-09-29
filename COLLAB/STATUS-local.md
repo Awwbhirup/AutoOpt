@@ -5,6 +5,16 @@ main is pushed: origin/main = f3e8b74 (landing, members/audit, third arm, global
 glass.tsx, fonts in layout.tsx are all visible now). Starting L1 (WebGL landing) and L2 (deploy).
 Hosting decided: web on Vercel, Postgres on Neon, service on Hugging Face Spaces (Docker), not Fly.
 
+## Deploy (live)
+- Web: https://autoopt.vercel.app, Vercel builds main only, on every push. Build runs
+  `prisma migrate deploy` first against the production Neon branch `live`.
+  So: migrations must be additive and safe on a populated database (no dropping columns with
+  data, defaults on new NOT NULL columns). Never edit a migration that is already on main.
+- Service host: Azure Container Apps, pending the owner's account. Until then production has no
+  compute service; pages that need it must show a clear "engine offline" state, not crash.
+- GitHub sign-in in production needs a second OAuth app (owner action, later). Password sign-in
+  works now.
+
 ## Integrated into main
 (nothing from CLOUD yet)
 
