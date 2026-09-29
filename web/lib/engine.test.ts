@@ -19,9 +19,9 @@ describe("engineStatus", () => {
     expect(await engineStatus()).toEqual({ online: false, methods: [] });
   });
 
-  it("treats a method without an availability flag as runnable", async () => {
+  it("lists only the available methods as runnable", async () => {
     listing.result = [
-      { name: "greedy", kind: "rule_based" },
+      { name: "greedy", kind: "rule_based", available: true },
       { name: "llm", kind: "llm", available: false },
     ];
     const status = await engineStatus();

@@ -3,9 +3,8 @@
  * with a short timeout. Pages use it to say "engine offline" instead of
  * failing when the service is down or not configured.
  *
- * `available` is read if the service sends it (a model arm with no provider
- * key would run the stub instead); a service that does not send it is taken
- * at its word that every method it lists can run.
+ * `available` is false for a model arm with no provider key, which would
+ * otherwise run the stub under the model's name.
  */
 
 import { methods } from "./service";
@@ -30,7 +29,7 @@ export async function engineStatus(timeoutMs = 2500): Promise<EngineStatus> {
       methods: list.map((method) => ({
         name: method.name,
         kind: method.kind,
-        available: (method as { available?: unknown }).available !== false,
+        available: method.available,
       })),
     };
   } catch {
