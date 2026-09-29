@@ -342,7 +342,7 @@ export default function RidgelineScene({
     >
       <Canvas
         orthographic
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
         // Reduced motion draws only on demand, except while the pointer is over
         // the chart, where hover still has to be picked up every frame.
         frameloop={visible ? (reduced && !pointerInside ? "demand" : "always") : "never"}
@@ -364,7 +364,7 @@ export default function RidgelineScene({
             start={start}
           />
         ))}
-        <EffectComposer multisampling={4}>
+        <EffectComposer multisampling={2}>
           <Bloom mipmapBlur luminanceThreshold={1} intensity={0.85} radius={0.7} />
         </EffectComposer>
       </Canvas>

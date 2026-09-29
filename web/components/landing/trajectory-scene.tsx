@@ -325,7 +325,7 @@ export default function TrajectoryScene({
     >
       <Canvas
         orthographic
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
         // The replay keeps adding slabs, so this one animates whenever it is on screen.
         frameloop={visible ? "always" : "never"}
         gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
@@ -348,7 +348,7 @@ export default function TrajectoryScene({
             register={register}
           />
         ))}
-        <EffectComposer multisampling={4}>
+        <EffectComposer multisampling={2}>
           <Bloom mipmapBlur luminanceThreshold={1} intensity={0.9} radius={0.65} />
         </EffectComposer>
       </Canvas>
