@@ -9,6 +9,7 @@
 
 import type { PrismaClient, RunStatus } from "@prisma/client";
 
+import { notify, suiteFinishedNotice } from "../notifications";
 import type { ClaimedRun, SuiteStore } from "./executor";
 
 const FINAL: ReadonlySet<RunStatus> = new Set(["SUCCEEDED", "FAILED", "ABANDONED"]);
@@ -98,15 +99,36 @@ export function prismaSuiteStore(db: PrismaClient): SuiteStore {
         status = count("SUCCEEDED") > 0 ? "SUCCEEDED" : count("FAILED") > 0 ? "FAILED" : "ABANDONED";
       }
 
-      await db.suiteRun.update({
+      const closing = FINAL.has(status) && !FINAL.has(current.status);
+      const updated = await db.suiteRun.update({
         where: { id: suiteRunId },
         data: {
           total,
           completed: total - remaining,
           status,
-          ...(FINAL.has(status) && !FINAL.has(current.status) ? { finishedAt: new Date() } : {}),
+          ...(closing ? { finishedAt: new Date() } : {}),
+        },
+        select: {
+          startedById: true,
+          suite: { select: { id: true, name: true, workspace: { select: { id: true, slug: true } } } },
         },
       });
+      // Whoever started it hears that it is done. A run stopped by hand was
+      // already final, so stopping it does not announce itself.
+      if (closing && updated.startedById !== null) {
+        await notify(
+          db,
+          suiteFinishedNotice({
+            userId: updated.startedById,
+            workspace: updated.suite.workspace,
+            suite: updated.suite,
+            suiteRunId,
+            status,
+            succeeded: count("SUCCEEDED"),
+            total,
+          }),
+        );
+      }
       return { remaining, status };
     },
   };

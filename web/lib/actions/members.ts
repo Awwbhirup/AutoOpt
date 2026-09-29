@@ -18,6 +18,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "../../auth";
 import { authorize, ROLES, type Principal, type Role } from "../authorize";
 import { prisma } from "../db";
+import { memberAddedNotice, notify } from "../notifications";
 import { record } from "../repositories/audit";
 import {
   addMember,
@@ -56,7 +57,7 @@ function isRole(value: string): value is Role {
  */
 type Resolved =
   | { ok: false; refusal: ActionState }
-  | { ok: true; workspace: { id: string; slug: string }; principal: Principal };
+  | { ok: true; workspace: { id: string; slug: string; name: string }; principal: Principal };
 
 async function resolve(
   form: FormData,
@@ -129,6 +130,19 @@ export async function addWorkspaceMember(
       resourceId: membership.id,
       metadata: { email, role },
     });
+    const actor = await prisma.user.findUnique({
+      where: { id: principal.userId },
+      select: { name: true, email: true },
+    });
+    await notify(
+      prisma,
+      memberAddedNotice({
+        userId: user.id,
+        workspace: { id: workspace.id, slug: workspace.slug, name: workspace.name },
+        role,
+        by: actor?.name ?? actor?.email ?? null,
+      }),
+    );
     revalidatePath(`/w/${workspace.slug}/settings`);
     return created(membership.id);
   } catch (error) {
