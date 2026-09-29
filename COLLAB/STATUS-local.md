@@ -1,7 +1,8 @@
 # LOCAL status
 
 ## Now
-Setting up: collab branch, deploy accounts, then L1 (WebGL landing) and L2 (deploy) in parallel.
+Collab branch live. Owner is setting up Fly, Vercel, Neon and Blender access. Starting L1
+(WebGL landing) now; L2 (deploy) as soon as the accounts are in.
 
 ## Integrated into main
 (nothing yet)
