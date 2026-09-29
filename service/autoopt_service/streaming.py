@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import queue
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Callable
+from threading import Event as ThreadEvent
 from threading import Thread
 
 from autoopt.events import Event
@@ -48,7 +50,16 @@ def _config(request: OptimizeRequest) -> RunConfig:
     )
 
 
-async def run_events(request: OptimizeRequest) -> AsyncIterator[Event | RunFailed]:
+class _StoppedError(Exception):
+    pass
+
+
+async def run_events(
+    request: OptimizeRequest,
+    *,
+    deadline: float | None = None,
+    on_done: Callable[[], None] | None = None,
+) -> AsyncIterator[Event | RunFailed]:
     """Yield the decision log of one run as it is produced.
 
     Parse errors surface here rather than before, so a caller sees them the same
@@ -56,9 +67,18 @@ async def run_events(request: OptimizeRequest) -> AsyncIterator[Event | RunFaile
     """
     outbox: queue.Queue[Event | type[_Done]] = queue.Queue(maxsize=QUEUE_SIZE)
     failure: list[BaseException] = []
+    stopped = ThreadEvent()
 
     def sink(event: Event) -> None:
-        outbox.put(event)
+        while not stopped.is_set():
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("request time budget exceeded")
+            try:
+                outbox.put(event, timeout=POLL_SECONDS)
+                return
+            except queue.Full:
+                continue
+        raise _StoppedError
 
     def work() -> None:
         try:
@@ -71,37 +91,60 @@ async def run_events(request: OptimizeRequest) -> AsyncIterator[Event | RunFaile
                 category=request.category,
             )
         except BaseException as error:  # reported as a line, never as a traceback
-            failure.append(error)
+            if not isinstance(error, _StoppedError):
+                failure.append(error)
         finally:
-            outbox.put(_Done)
+            if on_done is not None:
+                on_done()
+            while not stopped.is_set():
+                try:
+                    outbox.put(_Done, timeout=POLL_SECONDS)
+                    break
+                except queue.Full:
+                    continue
 
     worker = Thread(target=work, name=f"run-{request.program_id}", daemon=True)
     worker.start()
 
     seq = 0
-    while True:
-        try:
-            item = outbox.get_nowait()
-        except queue.Empty:
-            await asyncio.sleep(POLL_SECONDS)
-            continue
-        if item is _Done:
-            break
-        assert not isinstance(item, type)
-        seq = item.seq
-        yield item
+    timed_out = False
+    try:
+        while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                timed_out = True
+                stopped.set()
+                break
+            try:
+                item = outbox.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(POLL_SECONDS)
+                continue
+            if item is _Done:
+                break
+            assert not isinstance(item, type)
+            seq = item.seq
+            yield item
 
-    if failure:
-        error = failure[0]
-        yield RunFailed(
-            run_id=request.program_id,
-            seq=seq + 1,
-            message=str(error),
-            error_type=type(error).__name__,
-        )
+        if timed_out:
+            failure.append(TimeoutError("request time budget exceeded"))
+        if failure:
+            error = failure[0]
+            yield RunFailed(
+                run_id=request.program_id,
+                seq=seq + 1,
+                message=str(error),
+                error_type=type(error).__name__,
+            )
+    finally:
+        stopped.set()
 
 
-async def ndjson(request: OptimizeRequest) -> AsyncIterator[bytes]:
+async def ndjson(
+    request: OptimizeRequest,
+    *,
+    deadline: float | None = None,
+    on_done: Callable[[], None] | None = None,
+) -> AsyncIterator[bytes]:
     """The same stream as newline-delimited JSON, one object per line."""
-    async for event in run_events(request):
+    async for event in run_events(request, deadline=deadline, on_done=on_done):
         yield event.model_dump_json().encode() + b"\n"

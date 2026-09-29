@@ -77,6 +77,20 @@ def test_llm_arms_are_labelled_as_such(client: TestClient) -> None:
     assert by_name["llm"] == "llm"
 
 
+def test_methods_report_provider_availability(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    by_name = {entry["name"]: entry for entry in client.get("/methods").json()["methods"]}
+    assert by_name["greedy"]["available"] is True
+    assert by_name["llm"]["available"] is False
+
+    monkeypatch.setenv("GEMINI_API_KEY", "key")
+    by_name = {entry["name"]: entry for entry in client.get("/methods").json()["methods"]}
+    assert by_name["llm"]["available"] is True
+
+
 def test_a_run_streams_its_decision_log(client: TestClient) -> None:
     response = post(client)
     assert response.status_code == 200
@@ -171,7 +185,7 @@ def test_failure_carries_no_traceback(client: TestClient) -> None:
 
 def test_oversized_source_is_rejected(client: TestClient) -> None:
     """A run has to finish inside the caller's request timeout."""
-    response = post(client, source="input x;\n" + ("int a = 1;\n" * MAX_SOURCE_CHARS))
+    response = post(client, source="x" * (MAX_SOURCE_CHARS + 1))
     assert response.status_code == 422
 
 

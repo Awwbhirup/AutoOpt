@@ -53,7 +53,7 @@ const sourceDiagnostic = z.object({
 export async function analyzeSource(source: string, signal?: AbortSignal): Promise<AnalyzeResult> {
   const response = await fetch(`${baseUrl()}/analyze`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: serviceHeaders(true),
     body: JSON.stringify({ source }),
     signal,
   });
@@ -108,6 +108,14 @@ function baseUrl(): string {
   return url.replace(/\/$/, "");
 }
 
+function serviceHeaders(json = false): HeadersInit {
+  const token = process.env.AUTOOPT_SERVICE_TOKEN;
+  return {
+    ...(json ? { "content-type": "application/json" } : {}),
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 /**
  * Split a byte stream into lines as they arrive.
  *
@@ -156,7 +164,7 @@ export async function* optimize(
 ): AsyncGenerator<StreamedEvent> {
   const response = await fetch(`${baseUrl()}/optimize`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: serviceHeaders(true),
     signal: options.signal,
     body: JSON.stringify({
       source: options.source,
@@ -213,17 +221,20 @@ export interface Vocabulary {
 
 /** What the service says it can emit. Used by the drift test. */
 export async function vocabulary(signal?: AbortSignal): Promise<Vocabulary> {
-  const response = await fetch(`${baseUrl()}/schema`, { signal });
+  const response = await fetch(`${baseUrl()}/schema`, { signal, headers: serviceHeaders() });
   if (!response.ok) {
     throw new ServiceError(`could not read the service vocabulary`, response.status);
   }
   return (await response.json()) as Vocabulary;
 }
 
-export interface MethodInfo {
-  name: string;
-  kind: "rule_based" | "llm";
-}
+const methodInfo = z.object({
+  name: z.string(),
+  kind: z.enum(["rule_based", "llm"]),
+  available: z.boolean(),
+});
+
+export type MethodInfo = z.infer<typeof methodInfo>;
 
 /**
  * The methods this deployment offers.
@@ -232,10 +243,10 @@ export interface MethodInfo {
  * offers it in the interface without anything here being edited to match.
  */
 export async function methods(signal?: AbortSignal): Promise<MethodInfo[]> {
-  const response = await fetch(`${baseUrl()}/methods`, { signal });
+  const response = await fetch(`${baseUrl()}/methods`, { signal, headers: serviceHeaders() });
   if (!response.ok) {
     throw new ServiceError("could not read the available methods", response.status);
   }
-  const body = (await response.json()) as { methods: MethodInfo[] };
-  return body.methods;
+  const body: unknown = await response.json();
+  return z.object({ methods: z.array(methodInfo) }).parse(body).methods;
 }

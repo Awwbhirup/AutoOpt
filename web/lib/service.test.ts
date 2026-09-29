@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { analyzeSource, optimize, readLines, ServiceError } from "./service";
+import { analyzeSource, methods, optimize, readLines, ServiceError, vocabulary } from "./service";
 
 const RUN_STARTED = {
   kind: "run_started",
@@ -75,6 +75,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.AUTOOPT_SERVICE_TOKEN;
   vi.unstubAllGlobals();
 });
 
@@ -257,5 +258,39 @@ describe("source analysis", () => {
   it("rejects a malformed service response", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ tac: [], blocks: [], edges: [{ kind: "maybe" }] })));
     await expect(analyzeSource("input x;")).rejects.toThrow(/invalid analysis/);
+  });
+});
+
+describe("service access", () => {
+  it("sends the configured token on each service request", async () => {
+    process.env.AUTOOPT_SERVICE_TOKEN = "local-secret";
+    const fetchStub = vi.fn(async (url: string, _init?: RequestInit) => {
+      void _init;
+      if (url.endsWith("/analyze")) return Response.json({ tac: [], blocks: [], edges: [] });
+      if (url.endsWith("/methods")) return Response.json({ methods: [] });
+      if (url.endsWith("/schema")) return Response.json({
+        event_kinds: [], optimization_types: [], verification_methods: [],
+        verification_verdicts: [], reject_reasons: [],
+      });
+      return new Response(streamOf([JSON.stringify(RUN_STARTED) + "\n"]));
+    });
+    vi.stubGlobal("fetch", fetchStub);
+
+    await analyzeSource("input x;");
+    await collect(optimize({ source: "input x;" }));
+    await methods();
+    await vocabulary();
+
+    expect(fetchStub).toHaveBeenCalledTimes(4);
+    for (const [, init] of fetchStub.mock.calls) {
+      expect(init?.headers).toMatchObject({ authorization: "Bearer local-secret" });
+    }
+  });
+
+  it("validates method availability", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      methods: [{ name: "llm", kind: "llm", available: false }],
+    })));
+    expect(await methods()).toEqual([{ name: "llm", kind: "llm", available: false }]);
   });
 });

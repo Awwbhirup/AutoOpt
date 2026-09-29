@@ -27,7 +27,11 @@ MAX_ITERATIONS_CEILING = 1_000
 class OptimizeRequest(BaseModel):
     """One program, one method, one run."""
 
-    source: str = Field(min_length=1, max_length=MAX_SOURCE_CHARS)
+    source: str = Field(
+        min_length=1,
+        max_length=MAX_SOURCE_CHARS,
+        examples=["input x; int y = x + 1; print(y);"],
+    )
     method: str = "greedy"
     seed: int = Field(default=0, ge=0)
     max_iterations: int = Field(default=DEFAULT_MAX_ITERATIONS, ge=1, le=MAX_ITERATIONS_CEILING)
@@ -65,6 +69,7 @@ class RunFailed(BaseModel):
 class MethodInfo(BaseModel):
     name: str
     kind: Literal["rule_based", "llm"]
+    available: bool
 
 
 class MethodsResponse(BaseModel):
@@ -99,7 +104,11 @@ class VocabularyResponse(BaseModel):
 
 
 class AnalyzeRequest(BaseModel):
-    source: str = Field(min_length=1, max_length=MAX_SOURCE_CHARS)
+    source: str = Field(
+        min_length=1,
+        max_length=MAX_SOURCE_CHARS,
+        examples=["input x; int y = x + 1; print(y);"],
+    )
 
 
 class SourceDiagnostic(BaseModel):
