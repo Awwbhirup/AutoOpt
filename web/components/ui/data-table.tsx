@@ -42,17 +42,17 @@ export function DataTable<T>({
   if (rows.length === 0 && empty !== undefined) return <>{empty}</>;
 
   return (
-    <div className={cx("overflow-x-auto overscroll-x-contain", className)} data-lenis-prevent>
+    <div className={cx("relative overflow-x-auto overscroll-x-contain", className)} data-lenis-prevent>
       <table className="w-full border-collapse text-left text-sm">
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <thead>
-          <tr className="border-b border-(--ui-border)">
+          <tr className="border-b border-line">
             {columns.map((column) => (
               <th
                 key={column.key}
                 scope="col"
                 className={cx(
-                  "h-9 px-4 text-[0.72rem] font-medium tracking-wider whitespace-nowrap text-(--ui-ink-3) uppercase",
+                  "h-9 px-4 text-[0.78rem] font-medium tracking-wider whitespace-nowrap text-muted uppercase",
                   column.align === "right" && "text-right",
                   column.wide && "hidden sm:table-cell",
                 )}
@@ -66,15 +66,15 @@ export function DataTable<T>({
           {rows.map((row) => (
             <tr
               key={rowKey(row)}
-              className="h-11 border-b border-(--ui-border) transition-colors last:border-b-0 hover:bg-[color-mix(in_oklab,var(--ui-sunken)_70%,transparent)]"
+              className="h-11 border-b border-line transition-colors last:border-b-0 hover:bg-foreground/[0.03]"
             >
               {columns.map((column) => (
                 <td
                   key={column.key}
                   className={cx(
-                    "px-4 py-2 align-middle",
+                    "px-4 py-2 align-middle whitespace-nowrap",
                     column.align === "right" && "text-right",
-                    column.mono && "ui-mono text-xs text-(--ui-ink-2)",
+                    column.mono && "font-terminal tabular-nums text-xs text-foreground/75",
                     column.wide && "hidden sm:table-cell",
                     column.className,
                   )}

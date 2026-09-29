@@ -30,7 +30,7 @@ export function DialogContent({
       <Primitive.Overlay className="ui-fade fixed inset-0 z-40 bg-black/45 backdrop-blur-[2px]" />
       <Primitive.Content
         className={cx(
-          "ui-pop ui-glass ui-root fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-(--ui-surface-solid) p-5 focus:outline-none",
+          "ui-pop glass glass--card font-display text-foreground fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-surface p-5 focus:outline-none",
           className,
         )}
       >
@@ -38,7 +38,7 @@ export function DialogContent({
           {title}
         </Primitive.Title>
         {description ? (
-          <Primitive.Description className="mt-1 text-sm leading-relaxed text-(--ui-ink-2)">
+          <Primitive.Description className="mt-1 text-sm leading-relaxed text-foreground/75">
             {description}
           </Primitive.Description>
         ) : (
@@ -48,7 +48,7 @@ export function DialogContent({
         <div className="mt-4">{children}</div>
         <Primitive.Close
           aria-label="Close"
-          className="ui-focus absolute top-3 right-3 grid size-7 place-items-center rounded-md text-(--ui-ink-3) transition-colors hover:bg-(--ui-sunken) hover:text-(--ui-ink)"
+          className="ui-focus absolute top-3 right-3 grid size-7 place-items-center rounded-md text-muted transition-colors hover:bg-foreground/5 hover:text-foreground"
         >
           <svg aria-hidden viewBox="0 0 12 12" className="size-3">
             <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" />

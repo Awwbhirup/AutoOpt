@@ -12,10 +12,10 @@ function Figure() {
   return (
     <svg aria-hidden viewBox="0 0 64 40" className="h-10 w-16">
       <g fill="none" strokeWidth="1.5">
-        <path d="M14 20h12M38 20h12" stroke="var(--ui-border-strong)" strokeDasharray="2 3" />
-        <rect x="2" y="13" width="12" height="14" rx="3" stroke="var(--ui-ramp-0)" />
-        <rect x="26" y="13" width="12" height="14" rx="3" stroke="var(--ui-ramp-1)" />
-        <rect x="50" y="13" width="12" height="14" rx="3" stroke="var(--ui-border-strong)" strokeDasharray="2 2" />
+        <path d="M14 20h12M38 20h12" stroke="var(--muted)" strokeDasharray="2 3" />
+        <rect x="2" y="13" width="12" height="14" rx="3" stroke="var(--ramp-0)" />
+        <rect x="26" y="13" width="12" height="14" rx="3" stroke="var(--ramp-1)" />
+        <rect x="50" y="13" width="12" height="14" rx="3" stroke="var(--muted)" strokeDasharray="2 2" />
       </g>
     </svg>
   );
@@ -44,9 +44,9 @@ export function EmptyState({
       )}
     >
       {compact ? null : <Figure />}
-      <p className="text-sm font-semibold text-(--ui-ink)">{title}</p>
+      <p className="text-sm font-semibold text-foreground">{title}</p>
       {children ? (
-        <div className="max-w-md text-sm leading-relaxed text-(--ui-ink-2)">{children}</div>
+        <div className="max-w-md text-sm leading-relaxed text-foreground/75">{children}</div>
       ) : null}
       {action ? <div className="mt-2">{action}</div> : null}
     </div>

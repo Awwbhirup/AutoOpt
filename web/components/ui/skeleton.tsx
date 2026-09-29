@@ -26,7 +26,7 @@ export function SkeletonText({ lines = 2, className }: { lines?: number; classNa
 /** A table body's worth of rows, matching the DataTable's row height. */
 export function SkeletonRows({ rows = 6, columns = 5 }: { rows?: number; columns?: number }) {
   return (
-    <div aria-hidden className="divide-y divide-(--ui-border)">
+    <div aria-hidden className="divide-y divide-line">
       {Array.from({ length: rows }, (_, row) => (
         <div key={row} className="flex h-11 items-center gap-4 px-4">
           {Array.from({ length: columns }, (_, column) => (

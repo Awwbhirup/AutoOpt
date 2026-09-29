@@ -17,7 +17,7 @@ import type {
 import { cx } from "@/lib/cx";
 
 const FIELD =
-  "ui-focus w-full rounded-md border border-(--ui-border-strong) bg-(--ui-surface-solid) text-sm text-(--ui-ink) transition-colors placeholder:text-(--ui-ink-3) hover:border-(--ui-ink-3) disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-(--ui-refused)";
+  "ui-focus w-full rounded-md border border-foreground/15 bg-surface text-sm text-foreground transition-colors placeholder:text-muted hover:border-foreground/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-refused";
 
 export function fieldClass(className?: string): string {
   return cx(FIELD, className);
@@ -34,7 +34,7 @@ export function Textarea({
 }: TextareaHTMLAttributes<HTMLTextAreaElement> & { mono?: boolean }) {
   return (
     <textarea
-      className={cx(FIELD, "px-3 py-2 leading-relaxed", mono && "ui-mono text-xs", className)}
+      className={cx(FIELD, "px-3 py-2 leading-relaxed", mono && "font-terminal tabular-nums text-xs", className)}
       {...rest}
     />
   );
@@ -56,7 +56,7 @@ export function Select({
       <svg
         aria-hidden
         viewBox="0 0 12 12"
-        className="pointer-events-none absolute top-1/2 right-2.5 size-3 -translate-y-1/2 text-(--ui-ink-3)"
+        className="pointer-events-none absolute top-1/2 right-2.5 size-3 -translate-y-1/2 text-muted"
       >
         <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
       </svg>
@@ -84,17 +84,17 @@ export function Field({
     <div className={cx("flex min-w-0 flex-col gap-1.5", className)}>
       <label
         htmlFor={htmlFor}
-        className="text-xs font-medium tracking-wide text-(--ui-ink-2)"
+        className="text-xs font-medium tracking-wide text-foreground/75"
       >
         {label}
       </label>
       {children}
       {error ? (
-        <p id={`${htmlFor}-error`} role="alert" className="text-xs text-(--ui-refused-ink)">
+        <p id={`${htmlFor}-error`} role="alert" className="text-xs text-refused">
           {error}
         </p>
       ) : hint ? (
-        <p className="text-xs text-(--ui-ink-3)">{hint}</p>
+        <p className="text-xs text-muted">{hint}</p>
       ) : null}
     </div>
   );

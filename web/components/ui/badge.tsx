@@ -37,7 +37,7 @@ export function Badge({
       )}
     >
       {mark ? (
-        <span aria-hidden className="ui-mono">
+        <span aria-hidden className="font-terminal tabular-nums">
           {mark}
         </span>
       ) : null}

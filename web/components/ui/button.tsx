@@ -19,13 +19,13 @@ const BASE =
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary:
-    "border-transparent bg-(--ui-primary) text-(--ui-primary-ink) shadow-[0_0_0_1px_var(--ui-primary),0_6px_20px_-8px_var(--ui-primary)] hover:brightness-110",
+    "border-transparent bg-foreground text-background hover:bg-foreground/85 dark:bg-accent dark:text-background dark:shadow-[0_6px_22px_-10px_var(--accent)] dark:hover:bg-accent/85",
   secondary:
-    "border-(--ui-border-strong) bg-(--ui-surface-solid) text-(--ui-ink) hover:border-(--ui-ink-3) hover:bg-(--ui-sunken)",
+    "border-foreground/15 bg-surface text-foreground hover:border-foreground/30 hover:bg-foreground/5",
   ghost:
-    "border-transparent bg-transparent text-(--ui-ink-2) hover:bg-(--ui-sunken) hover:text-(--ui-ink)",
+    "border-transparent bg-transparent text-foreground/75 hover:bg-foreground/5 hover:text-foreground",
   danger:
-    "ui-tone-refused hover:bg-[color-mix(in_oklab,var(--ui-refused)_20%,transparent)]",
+    "ui-tone-refused hover:bg-refused/15",
 };
 
 const SIZE: Record<ButtonSize, string> = {

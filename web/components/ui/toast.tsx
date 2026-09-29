@@ -31,10 +31,10 @@ export function useToast(): Notify {
 }
 
 const MARK: Record<ToastTone, string> = {
-  neutral: "bg-(--ui-ink-3)",
-  kept: "bg-(--ui-kept)",
-  refused: "bg-(--ui-refused)",
-  info: "bg-(--ui-info)",
+  neutral: "bg-muted",
+  kept: "bg-accent",
+  refused: "bg-refused",
+  info: "bg-ramp-1",
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -65,20 +65,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             onAnimationEnd={() => {
               if (!toast.open) setQueue((current) => removeToast(current, toast.id));
             }}
-            className="ui-toast ui-glass ui-root relative flex gap-3 overflow-hidden rounded-lg bg-(--ui-surface-solid) py-3 pr-9 pl-4"
+            className="ui-toast glass glass--card font-display text-foreground relative flex gap-3 overflow-hidden rounded-lg bg-surface py-3 pr-9 pl-4"
           >
             <span aria-hidden className={cx("absolute inset-y-0 left-0 w-1", MARK[toast.tone])} />
             <div className="min-w-0">
               <Primitive.Title className="text-sm font-semibold">{toast.title}</Primitive.Title>
               {toast.description === null ? null : (
-                <Primitive.Description className="mt-0.5 text-xs leading-relaxed text-(--ui-ink-2)">
+                <Primitive.Description className="mt-0.5 text-xs leading-relaxed text-foreground/75">
                   {toast.description}
                 </Primitive.Description>
               )}
             </div>
             <Primitive.Close
               aria-label="Dismiss"
-              className="ui-focus absolute top-2.5 right-2.5 grid size-6 place-items-center rounded text-(--ui-ink-3) hover:bg-(--ui-sunken) hover:text-(--ui-ink)"
+              className="ui-focus absolute top-2.5 right-2.5 grid size-6 place-items-center rounded text-muted hover:bg-foreground/5 hover:text-foreground"
             >
               <svg aria-hidden viewBox="0 0 12 12" className="size-2.5">
                 <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" />

@@ -1,87 +1,36 @@
 /*
- * Tokens and the few classes the app kit cannot express as utilities.
+ * The few classes the app kit cannot express as utilities. Colours come from
+ * the tokens in app/globals.css; nothing here defines a palette of its own.
  *
- * Plain CSS rather than a Tailwind @theme block: this file is imported by the
- * app layouts, not by globals.css, and utilities read the values through the
- * var shorthand, e.g. bg-(--ui-surface). The layer order is restated so that a
- * page which loads this file first cannot put components below base.
+ * The layer order is restated so that a page which loads this file first
+ * cannot put components below base.
  */
 
 @layer theme, base, components, utilities;
 
+/*
+ * The ramp outside the landing page. globals.css only defines it under
+ * .landing, and the app draws ranks with it too. Same values; the .landing
+ * rule is more specific and still wins there.
+ */
 :root {
-  --ui-bg: #f4f5fa;
-  --ui-surface: rgb(255 255 255 / 0.78);
-  --ui-surface-solid: #ffffff;
-  --ui-sunken: #eceef5;
-  --ui-border: #dcdfea;
-  --ui-border-strong: #c4c8d8;
-  --ui-ink: #141726;
-  --ui-ink-2: #4a5068;
-  --ui-ink-3: #6f7590;
-  --ui-highlight: rgb(255 255 255 / 0.9);
-
-  /* Ramp: worse -> better. Rank only, never decoration. */
-  --ui-ramp-0: #8b5cf6;
-  --ui-ramp-1: #4f7cff;
-  --ui-ramp-2: #22c3e6;
-  --ui-ramp-3: #1fcf86;
-
-  /* One colour language: kept / refused / caution / neutral info. */
-  --ui-kept: #3ef2a0;
-  --ui-kept-ink: #047a4a;
-  --ui-refused: #ff6584;
-  --ui-refused-ink: #c01f4a;
-  --ui-caution: #f5b83d;
-  --ui-caution-ink: #8a5a00;
-  --ui-info: #4f7cff;
-  --ui-info-ink: #2f55c9;
-
-  --ui-primary: #141726;
-  --ui-primary-ink: #f4f5fa;
-  --ui-focus: #4f7cff;
-  --ui-shadow: 0 1px 2px rgb(20 23 38 / 0.06), 0 8px 24px -12px rgb(20 23 38 / 0.18);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ui-bg: #090b12;
-    --ui-surface: rgb(20 24 36 / 0.66);
-    --ui-surface-solid: #121622;
-    --ui-sunken: #0d1019;
-    --ui-border: #232a3d;
-    --ui-border-strong: #343d56;
-    --ui-ink: #e8ebf7;
-    --ui-ink-2: #a6adc6;
-    --ui-ink-3: #7a8199;
-    --ui-highlight: rgb(255 255 255 / 0.06);
-
-    --ui-ramp-2: #22d3ee;
-    --ui-ramp-3: #3ef2a0;
-
-    --ui-kept-ink: #3ef2a0;
-    --ui-refused-ink: #ff8aa3;
-    --ui-caution-ink: #f5c86a;
-    --ui-info-ink: #8eaaff;
-
-    --ui-primary: #3ef2a0;
-    --ui-primary-ink: #04120b;
-    --ui-focus: #22d3ee;
-    --ui-shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.7);
-  }
+  --ramp-0: #8b5cf6;
+  --ramp-1: #5b7cfa;
+  --ramp-2: #2aa8f2;
+  --ramp-3: #1fd4c3;
+  --ramp-4: #3ef2a0;
 }
 
 @layer components {
   .ui-root {
-    background-color: var(--ui-bg);
-    color: var(--ui-ink);
-    font-family: var(--font-ui-display), ui-sans-serif, system-ui, sans-serif;
+    /* Its own stacking context, so the backdrop's negative z-index stays above this background. */
+    isolation: isolate;
   }
 
   /*
    * A fixed backdrop so the app is not a flat sheet: two ramp washes and a
-   * grid, all well under the 6% the landing page allows itself. Static, since
-   * these pages are for reading.
+   * grid, all under the 6% the landing page allows itself. Static, since these
+   * pages are for reading.
    */
   .ui-backdrop {
     position: fixed;
@@ -89,67 +38,64 @@
     z-index: -1;
     pointer-events: none;
     background-image:
-      radial-gradient(60rem 28rem at 12% -8%, rgb(139 92 246 / 0.07), transparent 70%),
-      radial-gradient(48rem 24rem at 92% 0%, rgb(34 211 238 / 0.05), transparent 70%),
-      linear-gradient(to right, rgb(127 135 170 / 0.06) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(127 135 170 / 0.06) 1px, transparent 1px);
+      radial-gradient(60rem 28rem at 12% -8%, color-mix(in srgb, var(--ramp-0) 6%, transparent), transparent 70%),
+      radial-gradient(48rem 24rem at 92% 0%, color-mix(in srgb, var(--ramp-3) 5%, transparent), transparent 70%),
+      linear-gradient(to right, color-mix(in srgb, var(--foreground) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--foreground) 5%, transparent) 1px, transparent 1px);
     background-size: auto, auto, 40px 40px, 40px 40px;
     mask-image: linear-gradient(to bottom, black, transparent 85%);
   }
 
-  .ui-mono {
-    font-family: var(--font-ui-mono), ui-monospace, SFMono-Regular, monospace;
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* Raised surfaces: frosted, with a hairline highlight on the top edge. */
-  .ui-glass {
-    background-color: var(--ui-surface);
-    border: 1px solid var(--ui-border);
-    box-shadow: inset 0 1px 0 var(--ui-highlight), var(--ui-shadow);
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
+  /* Glass was tuned for the dark landing page; on paper its dark rim reads as a smudge. */
+  @media (prefers-color-scheme: light) {
+    .glass:not(.landing *) {
+      background: color-mix(in srgb, var(--surface) 72%, transparent);
+      box-shadow:
+        inset 0 0 0 1px var(--border),
+        inset 0 1px 0 0 rgb(255 255 255 / 0.9),
+        0 14px 36px -24px rgb(40 36 20 / 0.35);
+    }
   }
 
   .ui-tone-kept {
-    color: var(--ui-kept-ink);
-    background-color: color-mix(in oklab, var(--ui-kept) 13%, transparent);
-    border-color: color-mix(in oklab, var(--ui-kept) 45%, transparent);
+    color: var(--accent);
+    background-color: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   }
   .ui-tone-refused {
-    color: var(--ui-refused-ink);
-    background-color: color-mix(in oklab, var(--ui-refused) 12%, transparent);
-    border-color: color-mix(in oklab, var(--ui-refused) 45%, transparent);
+    color: var(--refused);
+    background-color: var(--refused-soft);
+    border-color: color-mix(in srgb, var(--refused) 40%, transparent);
   }
   .ui-tone-caution {
-    color: var(--ui-caution-ink);
-    background-color: color-mix(in oklab, var(--ui-caution) 14%, transparent);
-    border-color: color-mix(in oklab, var(--ui-caution) 50%, transparent);
+    color: var(--flag);
+    background-color: color-mix(in srgb, var(--flag) 10%, transparent);
+    border-color: color-mix(in srgb, var(--flag) 45%, transparent);
   }
   .ui-tone-info {
-    color: var(--ui-info-ink);
-    background-color: color-mix(in oklab, var(--ui-info) 11%, transparent);
-    border-color: color-mix(in oklab, var(--ui-info) 40%, transparent);
+    color: var(--ramp-1);
+    background-color: color-mix(in srgb, var(--ramp-1) 10%, transparent);
+    border-color: color-mix(in srgb, var(--ramp-1) 40%, transparent);
   }
   .ui-tone-neutral {
-    color: var(--ui-ink-2);
-    background-color: var(--ui-sunken);
-    border-color: var(--ui-border);
+    color: color-mix(in srgb, var(--foreground) 75%, transparent);
+    background-color: color-mix(in srgb, var(--foreground) 5%, transparent);
+    border-color: var(--border);
   }
 
   .ui-skeleton {
     background: linear-gradient(
       90deg,
-      var(--ui-sunken) 0%,
-      color-mix(in oklab, var(--ui-border) 70%, var(--ui-sunken)) 40%,
-      var(--ui-sunken) 80%
+      color-mix(in srgb, var(--foreground) 5%, transparent) 0%,
+      color-mix(in srgb, var(--foreground) 10%, transparent) 40%,
+      color-mix(in srgb, var(--foreground) 5%, transparent) 80%
     );
     background-size: 300% 100%;
     animation: ui-shimmer 1.6s ease-in-out infinite;
   }
 
   .ui-focus:focus-visible {
-    outline: 2px solid var(--ui-focus);
+    outline: 2px solid var(--ramp-2);
     outline-offset: 2px;
   }
 

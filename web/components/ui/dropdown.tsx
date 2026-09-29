@@ -25,7 +25,7 @@ export function MenuContent({
         align={align}
         sideOffset={6}
         className={cx(
-          "ui-pop ui-glass ui-root z-50 min-w-48 rounded-lg bg-(--ui-surface-solid) p-1 text-sm",
+          "ui-pop glass glass--card font-display text-foreground z-50 min-w-48 rounded-lg bg-surface p-1 text-sm",
           className,
         )}
       >
@@ -36,7 +36,7 @@ export function MenuContent({
 }
 
 const ITEM =
-  "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-(--ui-ink) outline-none select-none data-disabled:opacity-40 data-highlighted:bg-(--ui-sunken)";
+  "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-foreground outline-none select-none data-disabled:opacity-40 data-highlighted:bg-foreground/5";
 
 export function MenuItem({
   className,
@@ -45,7 +45,7 @@ export function MenuItem({
 }: ComponentProps<typeof Primitive.Item> & { tone?: "refused" }) {
   return (
     <Primitive.Item
-      className={cx(ITEM, tone === "refused" && "text-(--ui-refused-ink)", className)}
+      className={cx(ITEM, tone === "refused" && "text-refused", className)}
       {...rest}
     />
   );
@@ -53,12 +53,12 @@ export function MenuItem({
 
 export function MenuLabel({ children }: { children: ReactNode }) {
   return (
-    <Primitive.Label className="px-2 pt-1.5 pb-1 text-[0.72rem] tracking-wider text-(--ui-ink-3) uppercase">
+    <Primitive.Label className="px-2 pt-1.5 pb-1 text-[0.78rem] tracking-wider text-muted uppercase">
       {children}
     </Primitive.Label>
   );
 }
 
 export function MenuSeparator() {
-  return <Primitive.Separator className="my-1 h-px bg-(--ui-border)" />;
+  return <Primitive.Separator className="my-1 h-px bg-line" />;
 }

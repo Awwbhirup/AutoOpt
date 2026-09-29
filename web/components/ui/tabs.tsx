@@ -17,7 +17,7 @@ export function TabsList({ className, ...rest }: ComponentProps<typeof Primitive
   return (
     <Primitive.List
       className={cx(
-        "flex gap-1 overflow-x-auto border-b border-(--ui-border) [scrollbar-width:none]",
+        "flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none]",
         className,
       )}
       {...rest}
@@ -29,7 +29,7 @@ export function TabsTrigger({ className, ...rest }: ComponentProps<typeof Primit
   return (
     <Primitive.Trigger
       className={cx(
-        "ui-focus relative -mb-px shrink-0 border-b-2 border-transparent px-3 py-2 text-sm font-medium text-(--ui-ink-3) transition-colors hover:text-(--ui-ink) data-[state=active]:border-(--ui-ramp-2) data-[state=active]:text-(--ui-ink)",
+        "ui-focus relative -mb-px shrink-0 border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted transition-colors hover:text-foreground data-[state=active]:border-ramp-2 data-[state=active]:text-foreground",
         className,
       )}
       {...rest}
