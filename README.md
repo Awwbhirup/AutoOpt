@@ -28,8 +28,11 @@ the two, and the decision log says which.
 - Share links for a run or a suite's results: public, read-only, revocable,
   optionally expiring, with a generated preview image for when the link is
   pasted somewhere.
-- A playground at `/try` that needs no account, and a language reference at
-  `/docs`.
+- A playground at `/try` that needs no account: an editor with parse errors
+  inline, and as you type the control-flow graph, the TAC and the dataflow
+  facts per block. Run it to watch the decision log stream in and get a
+  before/after diff; the program and method live in the URL, so a link opens
+  straight into it. A language reference is at `/docs`.
 - Sign in with GitHub or with email and password (Auth.js, Prisma, Postgres).
 - A landing page whose charts are the real experiment data, drawn in WebGL
   with React Three Fiber.
