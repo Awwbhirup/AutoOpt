@@ -1,33 +1,37 @@
 ## Now
-C2 benchmark suites: starting, branch claude/funny-keller-iduooh
+C3 analytics dashboard: starting, branch claude/funny-keller-iduooh
 
 ## Done, ready to integrate
-- C1 ui kit + states: commits 16847be..b868906 (4 code commits, on top of f3e8b74), web checks
-  green (tsc, eslint, vitest 245 passed). Dependency commit 16847be adds radix-ui.
-  Kit: web/components/ui/ (button, input/select/field, dialog, dropdown, tabs, toast, skeleton,
-  empty state, badge, data table, surface: PageHeader/Panel/Stat/Callout). Uses globals.css tokens
-  (bg-surface, text-muted, border-line, accent/refused/flag), font-display/font-terminal/font-hero
-  and the .glass classes; GlassFilters is mounted in components/app/frame.tsx.
-  Pages: every /w route has loading.tsx, empty states and an error.tsx with retry; not-found for
-  the workspace. People and Audit moved onto the kit too (they imported shell/panel.tsx, which is
-  gone). /try and /docs get the same frame and a small public header.
-  Sign-in now lands on /w, which provisions a workspace if needed (covers first GitHub sign-in)
-  and redirects to it, or lists several.
-  Checked by screenshots at 1440 and 390, light and dark: no horizontal overflow, no console
-  errors. Landing replay (which reuses the trace components) still renders.
+- C1 ui kit + states: rebased onto d10c6b1; commits "the app ui kit needs radix primitives"
+  through "the app pages on the kit, with loading, empty and error states". Checks green.
+- C2 benchmark suites: 3 code commits on top of C1:
+  ed0bf35 migration 20260929145530_suite_programs (additive only: SuiteProgram join table,
+    BenchmarkSuite.createdById, SuiteRun.startedById + SuiteRun.grid, all nullable or defaulted).
+    `prisma format` also realigned whitespace in schema.prisma; no other model changed.
+  b9198c3 lib: method catalog (lib/methods.ts, controls = fixed_pipeline + random_baseline),
+    grid planning, results summary + CSV, queue executor with an atomic claim
+    (UPDATE ... FOR UPDATE SKIP LOCKED), engine status probe in lib/engine.ts. Unit tested.
+  f62d900 UI: /w/[ws]/suites, /suites/[id], /suites/[id]/runs/[runId] (results), SSE progress
+    at /api/suite-runs/[id]/stream, CSV at /api/suite-runs/[id]/csv, "Suites" in the nav.
+  Execution: startSuiteRun plans all runs QUEUED, then after() works the queue for up to 250 s.
+  If it stops (Vercel time limit), the results page's progress stream resumes it while open.
+  Engine offline: pages show a note and the Run button is disabled; nothing crashes.
+  Checked end to end here: 15 programs x 4 methods = 60 runs, live progress, charts filled in,
+  CSV downloaded, no console errors, no overflow at 390/1440 in light and dark.
+  Web checks: tsc, eslint, vitest (261 passed).
 
 ## Need from LOCAL
-- globals.css defines the ramp only under .landing. The app draws ranks with it, so
-  web/components/ui/theme.css sets the same --ramp-0..4 on :root. Please move them to :root in
-  globals.css; I will delete mine after.
-- Glass in light mode: .glass was tuned for dark. theme.css softens it for
-  `.glass:not(.landing *)` under prefers-color-scheme: light. Take it into globals.css if you
-  prefer it there.
-- scripts/shoot.mjs fails in this VM (playwright wants its own browser build). Fine for you;
-  I screenshot with my own script pointed at /opt/pw-browsers/chromium.
+- For CODEX (service/** is theirs now): please add `available: bool` to each /methods entry,
+  false for a model arm when neither GEMINI_API_KEY nor GROQ_API_KEY is set (the chain would run
+  the stub otherwise). web/lib/engine.ts already reads it if present and treats absence as
+  available, so nothing breaks before or after. I had written this in service/ before the
+  ownership change and dropped the commit unpushed; it never reached the branch.
+- Ramp on :root + light glass: will delete my copies in web/components/ui/theme.css once your
+  globals.css change is on main.
 
 ## Notes for LOCAL
-- New dirs I own: web/components/ui/, web/components/app/.
-- Removed web/components/shell/panel.tsx (replaced by components/ui/surface.tsx).
-- Quota.usedRuns stays 0 after runs on my DB; will look at it in C5 (per-key limits use Quota).
-- Guards: I run ../ctx/COLLAB/hooks/pre-commit and commit-msg as scripts before each commit.
+- I did not touch service/** or web/lib/service.ts in anything pushed. lib/engine.ts only calls
+  methods() from service.ts.
+- Suite runs appear in the Runs list too (they are runs); fine for now.
+- scripts/shoot.mjs needs `npx playwright install` in this VM; I use /opt/pw-browsers/chromium
+  via my own script instead.
