@@ -1,0 +1,225 @@
+/*
+ * Tokens and the few classes the app kit cannot express as utilities.
+ *
+ * Plain CSS rather than a Tailwind @theme block: this file is imported by the
+ * app layouts, not by globals.css, and utilities read the values through the
+ * var shorthand, e.g. bg-(--ui-surface). The layer order is restated so that a
+ * page which loads this file first cannot put components below base.
+ */
+
+@layer theme, base, components, utilities;
+
+:root {
+  --ui-bg: #f4f5fa;
+  --ui-surface: rgb(255 255 255 / 0.78);
+  --ui-surface-solid: #ffffff;
+  --ui-sunken: #eceef5;
+  --ui-border: #dcdfea;
+  --ui-border-strong: #c4c8d8;
+  --ui-ink: #141726;
+  --ui-ink-2: #4a5068;
+  --ui-ink-3: #6f7590;
+  --ui-highlight: rgb(255 255 255 / 0.9);
+
+  /* Ramp: worse -> better. Rank only, never decoration. */
+  --ui-ramp-0: #8b5cf6;
+  --ui-ramp-1: #4f7cff;
+  --ui-ramp-2: #22c3e6;
+  --ui-ramp-3: #1fcf86;
+
+  /* One colour language: kept / refused / caution / neutral info. */
+  --ui-kept: #3ef2a0;
+  --ui-kept-ink: #047a4a;
+  --ui-refused: #ff6584;
+  --ui-refused-ink: #c01f4a;
+  --ui-caution: #f5b83d;
+  --ui-caution-ink: #8a5a00;
+  --ui-info: #4f7cff;
+  --ui-info-ink: #2f55c9;
+
+  --ui-primary: #141726;
+  --ui-primary-ink: #f4f5fa;
+  --ui-focus: #4f7cff;
+  --ui-shadow: 0 1px 2px rgb(20 23 38 / 0.06), 0 8px 24px -12px rgb(20 23 38 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ui-bg: #090b12;
+    --ui-surface: rgb(20 24 36 / 0.66);
+    --ui-surface-solid: #121622;
+    --ui-sunken: #0d1019;
+    --ui-border: #232a3d;
+    --ui-border-strong: #343d56;
+    --ui-ink: #e8ebf7;
+    --ui-ink-2: #a6adc6;
+    --ui-ink-3: #7a8199;
+    --ui-highlight: rgb(255 255 255 / 0.06);
+
+    --ui-ramp-2: #22d3ee;
+    --ui-ramp-3: #3ef2a0;
+
+    --ui-kept-ink: #3ef2a0;
+    --ui-refused-ink: #ff8aa3;
+    --ui-caution-ink: #f5c86a;
+    --ui-info-ink: #8eaaff;
+
+    --ui-primary: #3ef2a0;
+    --ui-primary-ink: #04120b;
+    --ui-focus: #22d3ee;
+    --ui-shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.7);
+  }
+}
+
+@layer components {
+  .ui-root {
+    background-color: var(--ui-bg);
+    color: var(--ui-ink);
+    font-family: var(--font-ui-display), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  /*
+   * A fixed backdrop so the app is not a flat sheet: two ramp washes and a
+   * grid, all well under the 6% the landing page allows itself. Static, since
+   * these pages are for reading.
+   */
+  .ui-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      radial-gradient(60rem 28rem at 12% -8%, rgb(139 92 246 / 0.07), transparent 70%),
+      radial-gradient(48rem 24rem at 92% 0%, rgb(34 211 238 / 0.05), transparent 70%),
+      linear-gradient(to right, rgb(127 135 170 / 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(127 135 170 / 0.06) 1px, transparent 1px);
+    background-size: auto, auto, 40px 40px, 40px 40px;
+    mask-image: linear-gradient(to bottom, black, transparent 85%);
+  }
+
+  .ui-mono {
+    font-family: var(--font-ui-mono), ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Raised surfaces: frosted, with a hairline highlight on the top edge. */
+  .ui-glass {
+    background-color: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    box-shadow: inset 0 1px 0 var(--ui-highlight), var(--ui-shadow);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+  }
+
+  .ui-tone-kept {
+    color: var(--ui-kept-ink);
+    background-color: color-mix(in oklab, var(--ui-kept) 13%, transparent);
+    border-color: color-mix(in oklab, var(--ui-kept) 45%, transparent);
+  }
+  .ui-tone-refused {
+    color: var(--ui-refused-ink);
+    background-color: color-mix(in oklab, var(--ui-refused) 12%, transparent);
+    border-color: color-mix(in oklab, var(--ui-refused) 45%, transparent);
+  }
+  .ui-tone-caution {
+    color: var(--ui-caution-ink);
+    background-color: color-mix(in oklab, var(--ui-caution) 14%, transparent);
+    border-color: color-mix(in oklab, var(--ui-caution) 50%, transparent);
+  }
+  .ui-tone-info {
+    color: var(--ui-info-ink);
+    background-color: color-mix(in oklab, var(--ui-info) 11%, transparent);
+    border-color: color-mix(in oklab, var(--ui-info) 40%, transparent);
+  }
+  .ui-tone-neutral {
+    color: var(--ui-ink-2);
+    background-color: var(--ui-sunken);
+    border-color: var(--ui-border);
+  }
+
+  .ui-skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--ui-sunken) 0%,
+      color-mix(in oklab, var(--ui-border) 70%, var(--ui-sunken)) 40%,
+      var(--ui-sunken) 80%
+    );
+    background-size: 300% 100%;
+    animation: ui-shimmer 1.6s ease-in-out infinite;
+  }
+
+  .ui-focus:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+  }
+
+  /* Enter/exit for portalled layers (dialog, menu, toast), driven by Radix's data-state. */
+  .ui-pop[data-state="open"] {
+    animation: ui-pop-in 160ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  .ui-pop[data-state="closed"] {
+    animation: ui-pop-out 120ms ease-in forwards;
+  }
+  .ui-fade[data-state="open"] {
+    animation: ui-fade-in 160ms ease-out;
+  }
+  .ui-fade[data-state="closed"] {
+    animation: ui-fade-out 120ms ease-in forwards;
+  }
+  .ui-toast[data-state="open"] {
+    animation: ui-toast-in 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  .ui-toast[data-state="closed"] {
+    animation: ui-fade-out 140ms ease-in forwards;
+  }
+  .ui-toast[data-swipe="move"] {
+    transform: translateX(var(--radix-toast-swipe-move-x));
+  }
+  .ui-toast[data-swipe="end"] {
+    animation: ui-toast-out 140ms ease-in forwards;
+  }
+
+  /* Reveal for content that replaces a skeleton, so it does not snap in. */
+  .ui-reveal {
+    animation: ui-fade-in 220ms ease-out both;
+  }
+}
+
+@keyframes ui-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -50% 0; }
+}
+@keyframes ui-pop-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ui-pop-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(2px) scale(0.98); }
+}
+@keyframes ui-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ui-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes ui-toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ui-toast-out {
+  from { transform: translateX(var(--radix-toast-swipe-end-x)); }
+  to { transform: translateX(110%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-skeleton,
+  .ui-pop,
+  .ui-fade,
+  .ui-toast,
+  .ui-reveal {
+    animation: none !important;
+  }
+}
