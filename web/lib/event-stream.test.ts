@@ -15,6 +15,9 @@ function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
 const failed = JSON.stringify({ kind: "run_failed", run_id: "r", seq: 0, message: "no", error_type: "X" });
 
 describe("readEventStream", () => {
+  it("reports an interrupted stream instead of leaving the run pending", async () => {
+    await expect(readEventStream(streamOf([]), () => undefined)).rejects.toThrow("interrupted");
+  });
   it("joins lines split across chunks and reports the last kind", async () => {
     const batches: number[] = [];
     const last = await readEventStream(streamOf([failed.slice(0, 10), `${failed.slice(10)}\n`]), (events) =>

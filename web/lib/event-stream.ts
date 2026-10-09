@@ -48,5 +48,8 @@ export async function readEventStream(
   const tail: StreamedEvent[] = [];
   take(buffer, tail);
   if (tail.length) onBatch(tail);
+  if (last !== "run_converged" && last !== "run_failed") {
+    throw new Error("The run was interrupted before a result arrived. Try again.");
+  }
   return last;
 }
