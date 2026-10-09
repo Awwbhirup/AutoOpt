@@ -3,6 +3,8 @@
 import { useActionState, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import { KEY_SCOPES } from "@/lib/api/scopes";
 
 import { createApiKey, type KeyActionState } from "./actions";
@@ -12,6 +14,7 @@ const INITIAL: KeyActionState = { error: null, key: null };
 export function CreateKeyForm({ slug }: { slug: string }) {
   const [state, action, pending] = useActionState(createApiKey, INITIAL);
   const [copied, setCopied] = useState(false);
+  const toast = useToast();
 
   return (
     <div className="space-y-5">
@@ -19,7 +22,7 @@ export function CreateKeyForm({ slug }: { slug: string }) {
         <input type="hidden" name="workspace" value={slug} />
         <label className="block text-sm font-medium">
           Name
-          <input name="name" required maxLength={80} placeholder="Build pipeline" className="ui-input mt-2 w-full" />
+          <Input name="name" required maxLength={80} placeholder="Build pipeline" className="mt-2" />
         </label>
         <fieldset>
           <legend className="text-sm font-medium">Access</legend>
@@ -34,11 +37,11 @@ export function CreateKeyForm({ slug }: { slug: string }) {
         </fieldset>
         <label className="block text-sm font-medium">
           Expiry
-          <select name="expiry" defaultValue="90d" className="ui-input mt-2 w-full">
+          <Select name="expiry" defaultValue="90d" className="mt-2">
             <option value="30d">30 days</option>
             <option value="90d">90 days</option>
             <option value="never">No expiry</option>
-          </select>
+          </Select>
         </label>
         {state.error ? <p role="alert" className="text-sm text-refused">{state.error}</p> : null}
         <Button type="submit" variant="primary" pending={pending}>Create key</Button>
@@ -50,8 +53,13 @@ export function CreateKeyForm({ slug }: { slug: string }) {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <code className="font-terminal min-w-0 flex-1 break-all text-xs">{state.key}</code>
             <Button type="button" size="sm" onClick={async () => {
-              await navigator.clipboard.writeText(state.key ?? "");
-              setCopied(true);
+              try {
+                await navigator.clipboard.writeText(state.key ?? "");
+                setCopied(true);
+              } catch {
+                setCopied(false);
+                toast({ title: "Could not copy", description: "Select the key and copy it by hand.", tone: "refused" });
+              }
             }}>{copied ? "Copied" : "Copy"}</Button>
           </div>
         </div>
