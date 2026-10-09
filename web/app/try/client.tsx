@@ -122,7 +122,10 @@ function Playground({
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
-      if (!source.trim()) return;
+      if (!source.trim()) {
+        setAnalysis({ status: "idle" });
+        return;
+      }
       setAnalysis((current) => (current.status === "idle" ? { status: "loading" } : current));
       try {
         const response = await fetch("/api/analyze", {
@@ -216,7 +219,7 @@ function Playground({
       </Badge>
     ) : (
       <Badge tone="neutral" mark=".">
-        analysing
+        {source.trim() ? "analysing" : "empty program"}
       </Badge>
     );
 
@@ -231,9 +234,12 @@ function Playground({
                 type="button"
                 title={sample.note}
                 onClick={() => {
+                  runAbort.current?.abort();
                   setSource(sample.source);
                   setEvents([]);
+                  setProblem(null);
                   setSelected(null);
+                  setTab("graph");
                 }}
                 className={cx(
                   "ui-focus rounded-md border px-2 py-1 text-xs transition-colors",
@@ -249,7 +255,14 @@ function Playground({
           <div className="h-[24rem] lg:h-[28rem]">
             <MiniLangEditor
               value={source}
-              onChange={(next) => setSource(next.slice(0, MAX_SHARED_SOURCE))}
+              onChange={(next) => {
+                runAbort.current?.abort();
+                setSource(next.slice(0, MAX_SHARED_SOURCE));
+                setEvents([]);
+                setProblem(null);
+                setSelected(null);
+                setTab("graph");
+              }}
               diagnostic={diagnostic}
               label="Program source"
             />
@@ -312,7 +325,11 @@ function Playground({
             {(["graph", "tac", "dataflow"] as const).map((name) => (
               <TabsContent key={name} value={name} className={cx(analysis.status === "invalid" && "opacity-50")}>
                 {shown === null ? (
-                  analysis.status === "unavailable" ? (
+                  !source.trim() ? (
+                    <p className="py-8 text-center text-sm text-muted">Enter a program or choose a sample to see its analysis.</p>
+                  ) : diagnostic ? (
+                    <p className="py-8 text-center text-sm text-refused">{diagnostic.message}</p>
+                  ) : analysis.status === "unavailable" ? (
                     <p className="py-8 text-center text-sm text-muted">{analysis.message}</p>
                   ) : (
                     <div className="flex flex-col items-center gap-3 py-6">
