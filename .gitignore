@@ -91,6 +91,5 @@ engine/groq.keys
 # Editor directories.
 .vscode/
 .idea/
-.claude/
 .fleet/
 .neon
