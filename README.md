@@ -44,9 +44,11 @@ NDJSON. It also returns the TAC, control-flow graph and per-block dataflow
 facts for a program without optimizing it. It stores nothing; everything
 persistent belongs to the web tier.
 
-It runs on Vercel as a Python function at autoopt-engine.vercel.app, deployed
-by `scripts/deploy-service.ps1` with only the libraries a request needs, and
-answers only callers that send its token. `service/Dockerfile` builds the same
+It runs on Vercel as a Python function at autoopt-engine.vercel.app, with only
+the libraries a request needs (`service/vercel`), and answers only callers that
+send its token. Every push to main that passes CI redeploys it
+(`.github/workflows/deploy-service.yml`), the same way the web app redeploys
+through Vercel's GitHub integration; `scripts/deploy-service.ps1` does it by hand. `service/Dockerfile` builds the same
 service as an image for hosting it anywhere else.
 
 **The engine** (`engine/`, Python 3.12)

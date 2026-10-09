@@ -1,0 +1,45 @@
+name: Deploy service
+
+# The web app deploys through Vercel's own GitHub integration. The compute
+# service is a separate Vercel project staged from two folders, so it deploys
+# from here, and only after CI has passed on main.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-service
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: team_Etb8wlALVv93Uz7ADY6ODlpr
+      VERCEL_PROJECT_ID: prj_t33JZ03xXjWKcYxgrM8cXWsQWdwd
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Stage
+        run: |
+          mkdir stage
+          cp -r engine/autoopt service/autoopt_service stage/
+          cp service/vercel/app.py service/vercel/requirements.txt service/vercel/.python-version stage/
+          find stage -name __pycache__ -type d -prune -exec rm -rf {} +
+
+      - name: Deploy
+        if: env.VERCEL_TOKEN != ''
+        working-directory: stage
+        run: npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"
+
+      - name: Check
+        if: env.VERCEL_TOKEN != ''
+        run: curl --fail --silent --retry 5 --retry-delay 5 https://autoopt-engine.vercel.app/health
