@@ -44,6 +44,11 @@ NDJSON. It also returns the TAC, control-flow graph and per-block dataflow
 facts for a program without optimizing it. It stores nothing; everything
 persistent belongs to the web tier.
 
+It runs on Vercel as a Python function at autoopt-engine.vercel.app, deployed
+by `scripts/deploy-service.ps1` with only the libraries a request needs, and
+answers only callers that send its token. `service/Dockerfile` builds the same
+service as an image for hosting it anywhere else.
+
 **The engine** (`engine/`, Python 3.12)
 
 | Part | What it does |
@@ -67,7 +72,7 @@ persistent belongs to the web tier.
     |   auth, RBAC, runs, suites, audit
     | HTTP, NDJSON stream
     v
- FastAPI compute service (Docker)
+ FastAPI compute service (Vercel function, or Docker)
     |
     v
  engine: parse -> TAC + CFG -> analyse -> propose -> verify -> cost -> keep or refuse
@@ -111,6 +116,9 @@ make test           # engine, service and web tests
 Copy `web/.env.example` to `web/.env` and fill it in. The language-model arms
 are optional and read their keys from `engine/.env`.
 
+On Windows, `scripts/demo-start.ps1` starts the service and a production build
+of the web app and opens the browser; `scripts/demo-stop.ps1` stops both.
+
 Reproducing the study:
 
 ```bash
@@ -128,5 +136,5 @@ same output.
 engine/    the optimizer, as a library
 service/   FastAPI wrapper that streams the decision log
 web/       Next.js app: auth, workspaces, runs, suites, landing page
-scripts/   generators for the data files the site draws from
+scripts/   generators for the data files the site draws from, demo and deploy scripts
 ```
