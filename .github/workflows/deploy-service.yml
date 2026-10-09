@@ -35,11 +35,21 @@ jobs:
           cp service/vercel/app.py service/vercel/requirements.txt service/vercel/.python-version stage/
           find stage -name __pycache__ -type d -prune -exec rm -rf {} +
 
+      - name: Token
+        id: token
+        run: |
+          if [ -n "$VERCEL_TOKEN" ]; then
+            echo "set=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "set=no" >> "$GITHUB_OUTPUT"
+            echo "No VERCEL_TOKEN secret, so nothing is deployed."
+          fi
+
       - name: Deploy
-        if: env.VERCEL_TOKEN != ''
+        if: steps.token.outputs.set == 'yes'
         working-directory: stage
         run: npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"
 
       - name: Check
-        if: env.VERCEL_TOKEN != ''
+        if: steps.token.outputs.set == 'yes'
         run: curl --fail --silent --retry 5 --retry-delay 5 https://autoopt-engine.vercel.app/health
