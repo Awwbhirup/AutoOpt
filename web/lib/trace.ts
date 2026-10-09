@@ -272,7 +272,8 @@ export function foldTrace(events: StreamedEvent[]): Trace {
         break;
 
       case "decision": {
-        if (open === null || open.closed) {
+        if (open === null || open.closed || open.step.optimizationType !== event.optimization_type ||
+          (event.site !== null && open.step.site !== event.site) || open.step.iteration !== event.iteration) {
           // Carrying the site through. An acceptance is reported once the
           // search has settled, so it arrives with no step open and has to
           // start one; passing null here threw away the only thing that says

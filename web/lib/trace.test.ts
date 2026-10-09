@@ -192,6 +192,19 @@ function completed(): Log {
 }
 
 describe("a completed run", () => {
+  it("keeps a deferred acceptance separate from a different evaluated candidate", () => {
+    const log = new Log().started(START, cost(100, 3))
+      .proposal("constant_folding", 0, AFTER_FOLD)
+      .verified("tests_passed").priced(cost(100, 3), cost(80, 3))
+      .iterate(1).decided("dead_code_elimination", true, null, 2)
+      .converged(AFTER_FOLD, cost(80, 3));
+    const { steps } = foldTrace(log.events);
+    expect(steps).toHaveLength(2);
+    expect(steps[0].outcome).toBeNull();
+    expect(steps[1].optimizationType).toBe("dead_code_elimination");
+    expect(steps[1].verification).toBeNull();
+    expect(steps[1].outcome?.accepted).toBe(true);
+  });
   it("groups each opportunity and its outcome into one step", () => {
     const trace = foldTrace(completed().events);
 

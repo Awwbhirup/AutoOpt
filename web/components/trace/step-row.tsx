@@ -8,7 +8,7 @@
  * ship a bundle.
  */
 
-import type { TraceStep } from "@/lib/trace";
+import type { TraceStatus, TraceStep } from "@/lib/trace";
 import { optimizationLabel, verificationMethodLabel } from "@/lib/trace";
 
 import { CostDelta } from "./cost-delta";
@@ -28,12 +28,14 @@ function Counterexample({ values }: { values: Record<string, number> }) {
 export function TraceStepRow({
   step,
   previousTac = null,
+  status = "streaming",
 }: {
   step: TraceStep;
   /** The listing this step started from, so the proposal can be marked up. */
   previousTac?: string[] | null;
+  status?: TraceStatus;
 }) {
-  const settled = step.outcome !== null;
+  const settled = step.outcome !== null || status !== "streaming";
 
   return (
     <li
@@ -62,12 +64,12 @@ export function TraceStepRow({
 
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         {step.verification === null ? (
-          <PendingBadge label="not verified" />
+          <PendingBadge label="verification not recorded here" />
         ) : (
           <VerificationBadge verdict={step.verification.verdict} />
         )}
         {step.outcome === null ? (
-          <PendingBadge label="in progress" />
+          <PendingBadge label={status === "streaming" ? "in progress" : status === "failed" ? "interrupted" : "evaluated candidate"} />
         ) : (
           <OutcomeBadge
             accepted={step.outcome.accepted}

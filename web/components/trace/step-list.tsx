@@ -68,7 +68,7 @@ export function TraceStepList({
       ) : (
         <ol className="glass glass--card overflow-hidden rounded-xl">
           {steps.map((step, index) => (
-            <TraceStepRow key={step.index} step={step} previousTac={before[index]} />
+            <TraceStepRow key={step.index} step={step} previousTac={before[index]} status={status} />
           ))}
         </ol>
       )}
