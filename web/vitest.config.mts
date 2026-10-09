@@ -5,5 +5,7 @@ export default defineConfig({
     // Node, not jsdom: what is tested here is logic, not components.
     environment: "node",
     include: ["lib/**/*.test.ts", "app/**/*.test.ts"],
+    // Leave room for the browser and compute service during local checks.
+    maxWorkers: 4,
   },
 });

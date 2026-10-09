@@ -95,8 +95,12 @@ async function main() {
   // Headless Chromium rasterises in software unless told otherwise, which makes
   // backdrop filters and canvases look several times slower than they are on a
   // real machine. Ask for the GPU so the frame rate means something.
-  const browser = await chromium.launch({
+  const launchOptions = {
     args: ["--enable-gpu", "--ignore-gpu-blocklist", "--use-angle=default"],
+  };
+  const browser = await chromium.launch(launchOptions).catch((error) => {
+    if (!error.message.includes("Executable doesn't exist")) throw error;
+    return chromium.launch({ ...launchOptions, channel: "chrome" });
   });
   let failed = false;
 

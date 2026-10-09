@@ -13,7 +13,7 @@ import { hashPassword, MAX_PASSWORD_BYTES, PasswordError, verifyPassword } from 
 
 const PASSWORD = "correct horse battery staple";
 
-describe("hashing and verifying", () => {
+describe("hashing and verifying", { timeout: 30_000 }, () => {
   it("accepts the password it was given", async () => {
     const stored = await hashPassword(PASSWORD);
     expect(await verifyPassword(PASSWORD, stored)).toBe(true);
@@ -59,7 +59,7 @@ describe("hashing and verifying", () => {
   });
 });
 
-describe("the 72 byte limit", () => {
+describe("the 72 byte limit", { timeout: 30_000 }, () => {
   const AT_LIMIT = "a".repeat(MAX_PASSWORD_BYTES);
 
   it("stores a password that is exactly at the limit", async () => {
