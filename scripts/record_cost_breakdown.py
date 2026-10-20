@@ -272,7 +272,15 @@ def pick_example(corpus) -> dict[str, object]:
     example["astar_cost_after"] = round(astar.cost_after, 4)
     example["astar_tac"] = [str(i) for i in astar.final]
     example["astar_applied"] = list(astar.applied)
+    raw = measure(astar.final)
+    example["astar_terms"] = {
+        "instructions": raw.instruction_count,
+        "arithmetic": raw.arithmetic_ops,
+        "temps": raw.temp_vars,
+        "exec": raw.execution_estimate,
+    }
     example["proof"] = verify(tac, greedy.final, use_smt=True).verdict.value
+    example["astar_proof"] = verify(tac, astar.final, use_smt=True).verdict.value
     return example
 
 
