@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "engine"))
 
-from autoopt.cost import CostModel, CostWeights, measure
+from autoopt.cost import HANDOUT_WEIGHTS, CostModel, measure
 from autoopt.datagen import generate
 from autoopt.ir import build_cfg, source_to_tac
 from autoopt.orchestrator import RunConfig, optimize
@@ -49,7 +49,8 @@ LABELS = {
     "temps": "Temporaries",
     "exec": "Execution estimate",
 }
-WEIGHTS = dict(zip(TERMS, CostWeights().as_tuple(), strict=True))
+# The grid was run with the handout weights, so its runs are split with those.
+WEIGHTS = dict(zip(TERMS, HANDOUT_WEIGHTS.as_tuple(), strict=True))
 
 
 def mean(values: list[float]) -> float:
@@ -134,7 +135,7 @@ def single_moves(
 ) -> list[dict[str, object]]:
     """Every opportunity in the original, applied alone and measured."""
     tac = source_to_tac(source)
-    model = CostModel.for_program(tac)
+    model = CostModel.for_program(tac, HANDOUT_WEIGHTS)
     before = measure(tac)
     out = []
     for opportunity in analyse(build_cfg(tac)):
@@ -200,7 +201,7 @@ def walk(program_id: str, source: str) -> dict[str, object]:
     Same rule as the greedy method; the final cost is checked against it below.
     """
     tac = source_to_tac(source)
-    model = CostModel.for_program(tac)
+    model = CostModel.for_program(tac, HANDOUT_WEIGHTS)
     current = tac
 
     def snapshot(step: int, kind: str, program) -> dict[str, object]:
@@ -263,10 +264,14 @@ def pick_example(corpus) -> dict[str, object]:
     example = max((w for w in walks if 4 <= len(w["steps"]) <= 9), key=rank)  # type: ignore[arg-type]
     tac = source_to_tac(str(example["source"]))
     greedy = optimize(
-        tac, config=RunConfig(method="greedy"), program_id=str(example["program_id"])
+        tac,
+        config=RunConfig(method="greedy", weights=HANDOUT_WEIGHTS),
+        program_id=str(example["program_id"]),
     )
     astar = optimize(
-        tac, config=RunConfig(method="astar"), program_id=str(example["program_id"])
+        tac,
+        config=RunConfig(method="astar", weights=HANDOUT_WEIGHTS),
+        program_id=str(example["program_id"]),
     )
     example["greedy_cost_after"] = round(greedy.cost_after, 4)
     example["astar_cost_after"] = round(astar.cost_after, 4)

@@ -3,13 +3,15 @@
 The spec names four terms (instruction count, arithmetic ops, temporaries,
 execution time) and says to normalise before weighting, but gives no weights.
 Project 3 on the same handout gives 0.4 / 0.3 / 0.2 / 0.1, which is what the
-bootstrap run uses.
+4,500-run experiment used (HANDOUT_WEIGHTS).
 
-Weights are a parameter, never a module constant, because the plan is to fit them
-from the corpus rather than assume them: regress measured interpreter steps on the
-four terms across all 500 programs and take the standardised coefficients. That
-cannot happen until the corpus exists, so the handout weights get us there and the
-derived ones replace them afterwards.
+The default is now 0.4 / 0.1 / 0.2 / 0.3, chosen by scripts/record_weight_study.py:
+every weighting on a 0.1 grid was run and judged by the instructions the optimized
+programs actually execute. A* reaches the same programs under almost any weighting
+that uses all four terms. Greedy does not: when the arithmetic weight is above the
+execution weight it takes the arithmetic rewrites first and leaves loop-invariant
+code inside the loop. Swapping those two weights is the smallest change that fixes
+it, and it costs nothing on any program.
 
 Normalisation is against the original program, so the original always scores 1.0
 and cost reduction reads directly as 1 - cost. Terms are unitless after that,
@@ -59,15 +61,20 @@ DEFAULT_LATENCY = 1
 
 @dataclass(frozen=True, slots=True)
 class CostWeights:
-    """Bootstrap values come from Project 3 on the same handout."""
+    """Defaults are the weights chosen by the weight study (see the module docstring)."""
 
     instructions: float = 0.4
-    arithmetic: float = 0.3
+    arithmetic: float = 0.1
     temporaries: float = 0.2
-    execution: float = 0.1
+    execution: float = 0.3
 
     def as_tuple(self) -> tuple[float, float, float, float]:
         return (self.instructions, self.arithmetic, self.temporaries, self.execution)
+
+
+#: Project 3's weights from the handout. The recorded experiment used these, so a rerun
+#: that should reproduce it passes them explicitly.
+HANDOUT_WEIGHTS = CostWeights(instructions=0.4, arithmetic=0.3, temporaries=0.2, execution=0.1)
 
 
 @dataclass(frozen=True, slots=True)

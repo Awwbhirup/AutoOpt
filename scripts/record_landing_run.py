@@ -22,6 +22,7 @@ OUT = ROOT / "web" / "lib" / "recorded-run.ts"
 
 
 def main() -> int:
+    from autoopt.cost import HANDOUT_WEIGHTS
     from autoopt.datagen import generate
     from autoopt.ir import source_to_tac
     from autoopt.orchestrator.agent import RunConfig, optimize
@@ -30,7 +31,9 @@ def main() -> int:
     log: list[object] = []
     result = optimize(
         source_to_tac(program.source),
-        config=RunConfig(method=METHOD, use_smt=False, prove_final=True),
+        config=RunConfig(
+            method=METHOD, use_smt=False, prove_final=True, weights=HANDOUT_WEIGHTS
+        ),
         sink=log.append,
         program_id=PROGRAM_ID,
     )
@@ -44,7 +47,7 @@ def main() -> int:
         check=False,
     ).stdout.strip()
 
-    body = f'''/**
+    body = f"""/**
  * One real run of the engine, recorded, for the landing page to replay.
  *
  * Not a mock and not an illustration. These are the events the engine emitted
@@ -72,13 +75,15 @@ export const RECORDED_METHOD = {json.dumps(METHOD)};
 export const RECORDED_REDUCTION = {round(result.cost_reduction, 4)};
 
 export const RECORDED_EVENTS: StreamedEvent[] = {json.dumps(events, indent=1)} as StreamedEvent[];
-'''
+"""
 
     OUT.write_text(body, encoding="utf-8", newline="\n")
     decisions = [e for e in events if e["kind"] == "decision"]
     kept = sum(1 for d in decisions if d["accepted"])
     print(f"wrote {OUT.relative_to(ROOT)}  {OUT.stat().st_size / 1024:.1f} KB")
-    print(f"{len(events)} events, {len(decisions)} decided: {kept} kept, {len(decisions) - kept} refused")
+    print(
+        f"{len(events)} events, {len(decisions)} decided: {kept} kept, {len(decisions) - kept} refused"
+    )
     print(f"reduction {result.cost_reduction:.1%}  output match {result.output_match}")
     return 0
 

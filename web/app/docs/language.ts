@@ -371,7 +371,7 @@ export interface WorkedExample {
 }
 
 /**
- * A real run at seed 0 with the default weights, not an illustration. The two
+ * A real run at seed 0 with the handout weights, not an illustration. The two
  * methods are both here because the difference between them is the honest part:
  * every step greedy skipped was verified and correct, and was turned away for
  * not paying off on its own.

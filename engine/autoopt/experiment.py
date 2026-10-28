@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .cost import HANDOUT_WEIGHTS
 from .datagen import GeneratedProgram, generate
 from .ir import source_to_tac
 from .llm.provider import ProviderExhaustedError
@@ -437,8 +438,14 @@ def _run_experiment(
             handle.flush()
 
         for program, method, budget in cells:
+            # The recorded grid was run with the handout weights; keep them so a rerun
+            # reproduces it.
             config = RunConfig(
-                method=method, seed=seed, prove_final=prove_final, node_budget=budget
+                method=method,
+                seed=seed,
+                prove_final=prove_final,
+                node_budget=budget,
+                weights=HANDOUT_WEIGHTS,
             )
             try:
                 row = _row_for(program, method, config)

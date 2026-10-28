@@ -138,3 +138,19 @@ def test_empty_program_is_handled() -> None:
     program = source_to_tac("")
     model = CostModel.for_program(program)
     assert model.score(program).total == 0.0
+
+
+def test_default_weights_move_loop_invariant_code_before_arithmetic() -> None:
+    # The weight study's finding on mixed_000: with the handout weights greedy takes the
+    # arithmetic rewrites first and never hoists the invariant; the default weights do.
+    from autoopt.cost import HANDOUT_WEIGHTS
+    from autoopt.datagen import generate
+    from autoopt.orchestrator import RunConfig, optimize
+
+    source = next(p.source for p in generate() if p.program_id == "mixed_000")
+    program = source_to_tac(source)
+    handout = optimize(program, config=RunConfig(method="greedy", weights=HANDOUT_WEIGHTS))
+    default = optimize(program, config=RunConfig(method="greedy"))
+    assert "loop_invariant_code_motion" not in handout.applied
+    assert "loop_invariant_code_motion" in default.applied
+    assert handout.output_match and default.output_match

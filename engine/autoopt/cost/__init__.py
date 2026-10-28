@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .model import (
     ARITHMETIC_OPS,
+    HANDOUT_WEIGHTS,
     TRIP_COUNT,
     Cost,
     CostModel,
@@ -14,6 +15,7 @@ from .model import (
 
 __all__ = [
     "ARITHMETIC_OPS",
+    "HANDOUT_WEIGHTS",
     "TRIP_COUNT",
     "Cost",
     "CostModel",

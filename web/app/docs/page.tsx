@@ -229,7 +229,7 @@ export default function LanguagePage() {
           <Section
             id="example"
             title="A worked example"
-            lead="One program, lowered and then optimized. The listings are from an actual run at seed 0 with the default cost weights, not a sketch of one."
+            lead="One program, lowered and then optimized. The listings are from an actual run at seed 0 with the handout cost weights (0.4, 0.3, 0.2, 0.1), not a sketch of one."
           >
             <Listing label="source">{EXAMPLE.source}</Listing>
             <Listing label="three-address code, before optimization">{EXAMPLE.lowered}</Listing>
